@@ -3,7 +3,7 @@
 #include "dictymaze_platform.h"
 #include "dictymaze_opencv.h"
 
-#define IMAGE_SET_SIZE 1000
+#define IMAGE_SET_SIZE 100 //1000
 
 #define KEY_SPACE 32
 #define KEY_ESCAPE 27

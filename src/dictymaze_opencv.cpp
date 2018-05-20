@@ -85,14 +85,15 @@ CalculateOpticalFlowPiramidsLucasKanade(
 	*FilteredCornerCount = FilteredCount;
 }
 
-inline void
+inline m3
 EstimateRigidTransform(
-	m3* Transform,
 	v2* Src,
 	v2* Dst,
 	u32 Count,
 	b32 FullAffine)
 {
+	m3 Result = {};
+
 	cv::Mat SrcInternal(Count, 2, CV_32FC1);
 	cv::Mat DstInternal(Count, 2, CV_32FC1);
 	for (u32 Index = 0; Index < Count; ++Index)
@@ -107,17 +108,31 @@ EstimateRigidTransform(
 
 	if (TransformInternal.data)
 	{
-		Transform->D[0][0] = TransformInternal.at<f64>(0, 0);
-		Transform->D[0][1] = TransformInternal.at<f64>(0, 1);
-		Transform->D[0][2] = TransformInternal.at<f64>(0, 2);
-		Transform->D[1][0] = TransformInternal.at<f64>(1, 0);
-		Transform->D[1][1] = TransformInternal.at<f64>(1, 1);
-		Transform->D[1][2] = TransformInternal.at<f64>(1, 2);
+		Result.D[0][0] = TransformInternal.at<f64>(0, 0);
+		Result.D[0][1] = TransformInternal.at<f64>(0, 1);
+		Result.D[0][2] = TransformInternal.at<f64>(0, 2);
+		Result.D[1][0] = TransformInternal.at<f64>(1, 0);
+		Result.D[1][1] = TransformInternal.at<f64>(1, 1);
+		Result.D[1][2] = TransformInternal.at<f64>(1, 2);
 	}
+
+	return Result;
 }
 
 inline void
 CopyImage(image* Dst, image* Src)
 {
 	Src->copyTo(*Dst);
+}
+
+inline void WarpAffine(image* Src, image* Dst, v3 Transform)
+{
+	cv::Mat Matrix(2, 3, CV_32FC1);
+	Matrix.at<f32>(0, 0) = cos(Transform.Z);
+	Matrix.at<f32>(1, 0) = -sin(Transform.Z);
+	Matrix.at<f32>(0, 1) = sin(Transform.Z);
+	Matrix.at<f32>(1, 1) = cos(Transform.Z);
+	Matrix.at<f32>(0, 2) = Transform.X;
+	Matrix.at<f32>(1, 2) = Transform.Y;
+	cv::warpAffine(*Src, *Dst, Matrix, Src->size());
 }

@@ -31,11 +31,11 @@ StringCopy(char* Dst, char* Src, u32 Count)
 void
 StabilizeImages(image_set* ImageSet)
 {
-	m3 Transforms[ArrayCount(ImageSet->Images)];
+	v3 Transforms[IMAGE_SET_SIZE] = {};
 	m3 PrevTransform = {};
 	image PrevImage = GetImage(ImageSet, 0);
 	EqualizeHistogram(&PrevImage, &PrevImage);
-	for (u32 ImageIndex = 1; ImageIndex < ArrayCount(ImageSet->Images); ++ImageIndex)
+	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
 	{
 		image NextImage = GetImage(ImageSet, ImageIndex);
 		EqualizeHistogram(&NextImage, &NextImage);
@@ -46,9 +46,7 @@ StabilizeImages(image_set* ImageSet)
 
 		GoodFeaturesToTrack(&NextImage, PrevCorners, MAX_CORNERS, 0.01, 32);
 		CalculateOpticalFlowPiramidsLucasKanade(&PrevImage, &NextImage, PrevCorners, NextCorners, MAX_CORNERS, &FilteredCornerCount);
-
-		m3 Transform = {};
-		EstimateRigidTransform(&Transform, PrevCorners, NextCorners, FilteredCornerCount, false);
+		m3 Transform = EstimateRigidTransform(PrevCorners, NextCorners, FilteredCornerCount, false);
 		if (Transform.D[0][0] != 0.f)
 		{
 			PrevTransform = Transform;			
@@ -58,8 +56,21 @@ StabilizeImages(image_set* ImageSet)
 			Transform = PrevTransform;
 		}
 
-		Transforms[ImageIndex] = Transform;
+		Transforms[ImageIndex] = v3{Transform.D[0][2], Transform.D[1][2], atan2(Transform.D[1][0], Transform.D[0][0])};
 		CopyImage(&PrevImage, &NextImage);
+	}
+
+	v3 Trajectories[IMAGE_SET_SIZE] = {};
+	for (u32 ImageIndex = 1; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
+	{
+		Trajectories[ImageIndex] += Trajectories[ImageIndex - 1] + Transforms[ImageIndex];
+	}
+
+	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
+	{
+		image NextImage = GetImage(ImageSet, ImageIndex);
+		v3 Transform = -Trajectories[ImageIndex];
+		WarpAffine(&NextImage, &NextImage, Transform);
 	}
 }
 

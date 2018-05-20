@@ -15,6 +15,21 @@ struct v2
 	};
 };
 
+struct v3
+{
+	union
+	{
+		struct
+		{
+			f32 X, Y, Z;
+		};
+		struct
+		{
+			f32 E[3];
+		};
+	};
+};
+
 struct m3
 {
 	union
@@ -33,9 +48,14 @@ struct m3
 v2
 V2(f32 X, f32 Y)
 {
-	v2 Result = {};
-	Result.X = X;
-	Result.Y = Y;
+	v2 Result = v2{X, Y};
+	return Result;
+}
+
+v3
+V3(f32 X, f32 Y, f32 Z)
+{
+	v3 Result = v3{X, Y, Z};
 	return Result;
 }
 
