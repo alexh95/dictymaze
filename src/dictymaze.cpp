@@ -36,7 +36,7 @@ GetImageSet(char* Name, char* Directory, b32 Load = false)
 		if (Name && Load)
 		{
 			char FileName[256] = {};
-			sprintf(FileName, "../data/%s/%s/%s_%d.tif", Result.Directory, Result.Name, Result.Name, ImageIndex + 1);
+			sprintf(FileName, "../data/%s/%s/%s_%d.tif", Result.Directory, Result.Name, Result.Name, ImageIndex);
 			Result.Images[ImageIndex] = ReadGrayscaleImage(FileName);
 		}
 		else
@@ -58,7 +58,7 @@ GetImage(image_set* ImageSet, u32 ImageIndex)
 		if (StringLength(ImageSet->Name))
 		{
 			char FileName[256] = {};
-			sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex + 1);
+			sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex);
 			ImageSet->Images[ImageIndex] = ReadGrayscaleImage(FileName);
 			Result = ImageSet->Images + ImageIndex;
 		}
@@ -73,7 +73,7 @@ SaveImageSet(image_set* ImageSet)
 	char FileName[256] = {};
 	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
 	{
-		sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex + 1);
+		sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex);
 		WriteImage(FileName, GetImage(ImageSet, ImageIndex));
 	}
 }
@@ -210,7 +210,7 @@ void
 Dictymaze()
 {
 	char ImageSetName[] = "ax2__52517_2";
-	image_set ImageSet = GetImageSet(ImageSetName, "Source");
+	image_set ImageSet = GetImageSet(ImageSetName, "SourceSplit");
 
 	image_set StabilizedImageSet;
 	if (!GetStabilizedImages(&StabilizedImageSet, ImageSetName))

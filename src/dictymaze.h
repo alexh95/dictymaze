@@ -5,7 +5,7 @@
 
 #define IMAGE_SET_SIZE 1000
 
-#define MAX_CORNERS 64
+#define MAX_CORNERS 256
 
 #define KEY_SPACE 32
 #define KEY_ESCAPE 27
