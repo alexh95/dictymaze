@@ -122,6 +122,90 @@ GetStabilizedImages(image_set* ImageSet, char* ImageSetName)
 	return true;
 }
 
+inline u32
+PrevImageIndex(u32 ImageIndex)
+{
+	i32 PrevImageIndex = ImageIndex - 1;
+	if (PrevImageIndex < 0)
+	{
+		PrevImageIndex = IMAGE_SET_SIZE - 1;
+	}
+	return PrevImageIndex;
+}
+
+inline u32
+NextImageIndex(u32 ImageIndex)
+{
+	u32 NextImageIndex = ImageIndex + 1;
+	if (NextImageIndex >= IMAGE_SET_SIZE)
+	{
+		NextImageIndex = 0;
+	}
+	return NextImageIndex;
+}
+
+image
+ImageDifference(image* A, image* B)
+{
+	return *A - *B;
+}
+
+image
+ImageThreshold(image* Image, u32 Threshold)
+{
+	return *Image > Threshold;
+}
+
+image
+Laplacian(image* Image)
+{
+	image Result = CloneImage(Image);
+
+	cv::Laplacian(*Image, Result, CV_8U, 3);
+
+	return Result;
+}
+
+image
+Invert(image* Image)
+{
+	image Result = CloneImage(Image);
+
+	cv::bitwise_not(*Image, Result);
+
+	return Result;
+}
+
+image
+AdaptiveThreshold(image* Image)
+{
+	image Result;
+
+	cv::adaptiveThreshold(*Image, Result, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 3, 0);
+
+	return Result;
+}
+
+image
+MorphOpen(image* Image)
+{
+	image Result;
+
+	cv::morphologyEx(*Image, Result, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(3, 3)));
+
+	return Result;
+}
+
+image
+MorphClose(image* Image)
+{
+	image Result;
+
+	cv::morphologyEx(*Image, Result, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(3, 3)));
+
+	return Result;
+}
+
 void
 Dictymaze()
 {
@@ -143,14 +227,24 @@ Dictymaze()
 	b32 Running = true;
 	b32 Paused = false; //true
 	u32 FrameTime = 33;
-	u32 ImageIndex = 0;
+	u32 ImageIndex = 1;
 	while (Running)
 	{
-		image* Image = GetImage(&ImageSet, ImageIndex);
+		// image* Image = GetImage(&ImageSet, ImageIndex);
+		image* PrevStabilizedImage = GetImage(&StabilizedImageSet, PrevImageIndex(ImageIndex));
 		image* StabilizedImage = GetImage(&StabilizedImageSet, ImageIndex);
 
-		ShowImage(OutputWindowName1, Image);
-		ShowImage(OutputWindowName2, StabilizedImage);
+		image Difference = ImageDifference(StabilizedImage, PrevStabilizedImage);
+
+		// TODO(alex): extract labyrinth
+		image Edge = Laplacian(StabilizedImage);
+		ShowImage(OutputWindowName1, &Edge);
+
+		// Edge = Invert(&Edge);
+		Edge = MorphOpen(&Edge);
+		Edge = AdaptiveThreshold(&Edge);
+		// Edge = MorphClose(&Edge);
+		ShowImage(OutputWindowName2, &Edge);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)
@@ -165,42 +259,24 @@ Dictymaze()
 			} break;
 			case KEY_R:
 			{
-				ImageIndex = 0;
+				ImageIndex = 1;
 			} break;
 			case KEY_S:
 			{
-				ImageIndex = 0;
+				ImageIndex = 1;
 				Paused = true;
 			} break;
 			case KEY_RIGHT:
 			{
-				u32 NextImageIndex = ImageIndex + 1;
-				if (NextImageIndex >= IMAGE_SET_SIZE)
-				{
-					NextImageIndex = 0;
-				}
-
-				ImageIndex = NextImageIndex;
+				ImageIndex = NextImageIndex(ImageIndex);
 			} break;
 			case KEY_LEFT:
 			{
-				i32 PrevImageIndex = ImageIndex - 1;
-				if (PrevImageIndex < 0)
-				{
-					PrevImageIndex = IMAGE_SET_SIZE - 1;
-				}
-
-				ImageIndex = PrevImageIndex;
+				ImageIndex = PrevImageIndex(ImageIndex);
 			} break;
 			case -1:
 			{
-				u32 NextImageIndex = ImageIndex + 1;
-				if (NextImageIndex >= IMAGE_SET_SIZE)
-				{
-					NextImageIndex = 0;
-				}
-
-				ImageIndex = NextImageIndex;
+				ImageIndex = NextImageIndex(ImageIndex);
 			} break;
 			default: 
 			{
