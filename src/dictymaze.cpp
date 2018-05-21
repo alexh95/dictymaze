@@ -111,8 +111,15 @@ b32
 GetStabilizedImages(image_set* ImageSet, char* ImageSetName)
 {
 	*ImageSet = GetImageSet(ImageSetName, "Stabilized");
-	image* StabilizedImage = GetImage(ImageSet, 0);
-	return StabilizedImage->data != 0;
+	// for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
+	{
+		image* StabilizedImage = GetImage(ImageSet, 0 /*ImageIndex*/);
+		if (StabilizedImage->data == 0)
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 void
@@ -184,7 +191,6 @@ Dictymaze()
 				}
 
 				ImageIndex = PrevImageIndex;
-
 			} break;
 			case -1:
 			{
