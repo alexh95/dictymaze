@@ -3,10 +3,14 @@
 #include "dictymaze_platform.h"
 #include "dictymaze_opencv.h"
 
-#define IMAGE_SET_SIZE 100 //1000
+#define IMAGE_SET_SIZE 1000
+
+#define MAX_CORNERS 64
 
 #define KEY_SPACE 32
 #define KEY_ESCAPE 27
+#define KEY_R 'r'
+#define KEY_S 's'
 #define KEY_RIGHT 2555904
 #define KEY_UP 2490368
 #define KEY_LEFT 2424832
@@ -15,6 +19,7 @@
 struct image_set
 {
 	char Name[256];
+	char Directory[256];
 	image Images[IMAGE_SET_SIZE];
 };
 

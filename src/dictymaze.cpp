@@ -2,23 +2,6 @@
 #include "dictymaze_math.cpp"
 #include "dictymaze_opencv.cpp"
 
-#define MAX_CORNERS 256
-
-image
-GetImage(image_set* ImageSet, u32 ImageIndex)
-{
-	image result = ImageSet->Images[ImageIndex];
-
-	if (!result.data)
-	{
-		char FileName[256] = {};
-		sprintf(FileName, "../data/%s/%s_%d.tif", ImageSet->Name, ImageSet->Name, ImageIndex + 1);
-		result = ImageSet->Images[ImageIndex] = ReadGrayscaleImage(FileName);
-	}
-
-	return result;
-}
-
 void
 StringCopy(char* Dst, char* Src, u32 Count)
 {
@@ -28,78 +11,140 @@ StringCopy(char* Dst, char* Src, u32 Count)
 	}
 }
 
-void
-StabilizeImages(image_set* ImageSet)
+u32
+StringLength(char* String)
 {
-	v3 Transforms[IMAGE_SET_SIZE] = {};
-	m3 PrevTransform = {};
-	image PrevImage = GetImage(ImageSet, 0);
-	EqualizeHistogram(&PrevImage, &PrevImage);
+	u32 Result = 0;
+
+	if (String)
+	{
+		while (String[Result++]);
+	}
+
+	return Result;
+}
+
+image_set
+GetImageSet(char* Name, char* Directory, b32 Load = false)
+{
+	image_set Result = {};
+
+	StringCopy(Result.Name, Name, StringLength(Name));
+	StringCopy(Result.Directory, Directory, StringLength(Directory));
 	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
 	{
-		image NextImage = GetImage(ImageSet, ImageIndex);
-		EqualizeHistogram(&NextImage, &NextImage);
+		if (Name && Load)
+		{
+			char FileName[256] = {};
+			sprintf(FileName, "../data/%s/%s/%s_%d.tif", Result.Directory, Result.Name, Result.Name, ImageIndex + 1);
+			Result.Images[ImageIndex] = ReadGrayscaleImage(FileName);
+		}
+		else
+		{
+			Result.Images[ImageIndex] = image();
+		}
+	}
+
+	return Result;
+}
+
+image*
+GetImage(image_set* ImageSet, u32 ImageIndex)
+{
+	image* Result = ImageSet->Images + ImageIndex;
+
+	if (!Result->data)
+	{
+		if (StringLength(ImageSet->Name))
+		{
+			char FileName[256] = {};
+			sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex + 1);
+			ImageSet->Images[ImageIndex] = ReadGrayscaleImage(FileName);
+			Result = ImageSet->Images + ImageIndex;
+		}
+	}
+
+	return Result;
+}
+
+void
+SaveImageSet(image_set* ImageSet)
+{
+	char FileName[256] = {};
+	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
+	{
+		sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex + 1);
+		WriteImage(FileName, GetImage(ImageSet, ImageIndex));
+	}
+}
+
+void
+StabilizeImages(image_set* DstImageSet, image_set* SrcImageSet)
+{
+	image* PrevImage = GetImage(SrcImageSet, 0);
+	image PrevImageEq = CloneImage(PrevImage);
+	EqualizeHistogram(&PrevImageEq, PrevImage);
+	v3 Trajectory = {};
+	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
+	{
+		image* NextImage = GetImage(SrcImageSet, ImageIndex);
+		image NextImageEq = CloneImage(NextImage);
+		EqualizeHistogram(&NextImageEq, NextImage);
 
 		v2 PrevCorners[MAX_CORNERS] = {};
 		v2 NextCorners[MAX_CORNERS] = {};
 		u32 FilteredCornerCount = 0;
+		GoodFeaturesToTrack(&NextImageEq, PrevCorners, MAX_CORNERS, 0.01, 32);
+		CalculateOpticalFlowPiramidsLucasKanade(&PrevImageEq, &NextImageEq, PrevCorners, NextCorners, MAX_CORNERS, &FilteredCornerCount);
+		v3 Transform = EstimateRigidTransform(PrevCorners, NextCorners, FilteredCornerCount, false);
+		Trajectory += Transform;
+		image* DstImage = GetImage(DstImageSet, ImageIndex);
+		WarpAffine(DstImage, &NextImageEq, -Trajectory);
 
-		GoodFeaturesToTrack(&NextImage, PrevCorners, MAX_CORNERS, 0.01, 32);
-		CalculateOpticalFlowPiramidsLucasKanade(&PrevImage, &NextImage, PrevCorners, NextCorners, MAX_CORNERS, &FilteredCornerCount);
-		m3 Transform = EstimateRigidTransform(PrevCorners, NextCorners, FilteredCornerCount, false);
-		if (Transform.D[0][0] != 0.f)
-		{
-			PrevTransform = Transform;			
-		}
-		else
-		{
-			Transform = PrevTransform;
-		}
-
-		Transforms[ImageIndex] = v3{Transform.D[0][2], Transform.D[1][2], atan2(Transform.D[1][0], Transform.D[0][0])};
-		CopyImage(&PrevImage, &NextImage);
+		PrevImageEq = NextImageEq;
 	}
 
-	v3 Trajectories[IMAGE_SET_SIZE] = {};
-	for (u32 ImageIndex = 1; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
-	{
-		Trajectories[ImageIndex] += Trajectories[ImageIndex - 1] + Transforms[ImageIndex];
-	}
+	SaveImageSet(DstImageSet);
+}
 
-	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
-	{
-		image NextImage = GetImage(ImageSet, ImageIndex);
-		v3 Transform = -Trajectories[ImageIndex];
-		WarpAffine(&NextImage, &NextImage, Transform);
-	}
+b32
+GetStabilizedImages(image_set* ImageSet, char* ImageSetName)
+{
+	*ImageSet = GetImageSet(ImageSetName, "Stabilized");
+	image* StabilizedImage = GetImage(ImageSet, 0);
+	return StabilizedImage->data != 0;
 }
 
 void
 Dictymaze()
 {
-	image_set ImageSet = {};
 	char ImageSetName[] = "ax2__52517_2";
-	StringCopy(ImageSet.Name, ImageSetName, ArrayCount(ImageSetName));
-	
-	StabilizeImages(&ImageSet);
+	image_set ImageSet = GetImageSet(ImageSetName, "Source");
 
-	char OutputWindowName[] = "Output";
-	CreateNamedWindow(OutputWindowName);
-	b32 Paused = false;
-	u32 FrameTime = 33;
+	image_set StabilizedImageSet;
+	if (!GetStabilizedImages(&StabilizedImageSet, ImageSetName))
+	{
+		StabilizeImages(&StabilizedImageSet, &ImageSet);
+	}
+
+	char OutputWindowName1[] = "Output 1";
+	CreateNamedWindow(OutputWindowName1);
+
+	char OutputWindowName2[] = "Output 2";
+	CreateNamedWindow(OutputWindowName2);
+
 	b32 Running = true;
+	b32 Paused = false; //true
+	u32 FrameTime = 33;
 	u32 ImageIndex = 0;
 	while (Running)
 	{
-		image Image = GetImage(&ImageSet, ImageIndex);
+		image* Image = GetImage(&ImageSet, ImageIndex);
+		image* StabilizedImage = GetImage(&StabilizedImageSet, ImageIndex);
 
-		u32 NextImageIndex = ImageIndex + 1;
-		if (NextImageIndex >= IMAGE_SET_SIZE)
-		{
-			NextImageIndex = 0;
-		}
+		ShowImage(OutputWindowName1, Image);
+		ShowImage(OutputWindowName2, StabilizedImage);
 
-		ShowImage(OutputWindowName, &Image);
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)
 		{
@@ -111,8 +156,23 @@ Dictymaze()
 			{
 				Running = false;				
 			} break;
+			case KEY_R:
+			{
+				ImageIndex = 0;
+			} break;
+			case KEY_S:
+			{
+				ImageIndex = 0;
+				Paused = true;
+			} break;
 			case KEY_RIGHT:
 			{
+				u32 NextImageIndex = ImageIndex + 1;
+				if (NextImageIndex >= IMAGE_SET_SIZE)
+				{
+					NextImageIndex = 0;
+				}
+
 				ImageIndex = NextImageIndex;
 			} break;
 			case KEY_LEFT:
@@ -128,6 +188,12 @@ Dictymaze()
 			} break;
 			case -1:
 			{
+				u32 NextImageIndex = ImageIndex + 1;
+				if (NextImageIndex >= IMAGE_SET_SIZE)
+				{
+					NextImageIndex = 0;
+				}
+
 				ImageIndex = NextImageIndex;
 			} break;
 			default: 

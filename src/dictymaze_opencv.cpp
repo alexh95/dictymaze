@@ -1,6 +1,24 @@
 #include "dictymaze_opencv.h"
 #include "dictymaze_math.h"
 
+inline image
+Image(u32 Rows, u32 Cols, u32 Format)
+{
+	return image(Rows, Cols, Format);
+}
+
+inline void
+CopyImage(image* Dst, image* Src)
+{
+	Src->copyTo(*Dst);
+}
+
+inline image
+CloneImage(image* Image)
+{
+	return Image->clone();
+}
+
 inline void
 CreateNamedWindow(char* WindowName)
 {
@@ -11,6 +29,12 @@ inline image
 ReadGrayscaleImage(char* ImageName)
 {
 	return cv::imread(ImageName, cv::IMREAD_GRAYSCALE);
+}
+
+inline void
+WriteImage(char* ImageName, image* Image)
+{
+	cv::imwrite(ImageName, *Image);
 }
 
 inline void 
@@ -26,9 +50,9 @@ WaitKey(u32 Timeout)
 }
 
 inline void
-EqualizeHistogram(image* InputImage, image* OutputImage)
+EqualizeHistogram(image* DstImage, image* SrcImage)
 {
-	cv::equalizeHist(*InputImage, *OutputImage);
+	cv::equalizeHist(*SrcImage, *DstImage);
 }
 
 inline void
@@ -85,14 +109,14 @@ CalculateOpticalFlowPiramidsLucasKanade(
 	*FilteredCornerCount = FilteredCount;
 }
 
-inline m3
+inline v3
 EstimateRigidTransform(
 	v2* Src,
 	v2* Dst,
 	u32 Count,
 	b32 FullAffine)
 {
-	m3 Result = {};
+	v3 Result = {};
 
 	cv::Mat SrcInternal(Count, 2, CV_32FC1);
 	cv::Mat DstInternal(Count, 2, CV_32FC1);
@@ -108,24 +132,15 @@ EstimateRigidTransform(
 
 	if (TransformInternal.data)
 	{
-		Result.D[0][0] = TransformInternal.at<f64>(0, 0);
-		Result.D[0][1] = TransformInternal.at<f64>(0, 1);
-		Result.D[0][2] = TransformInternal.at<f64>(0, 2);
-		Result.D[1][0] = TransformInternal.at<f64>(1, 0);
-		Result.D[1][1] = TransformInternal.at<f64>(1, 1);
-		Result.D[1][2] = TransformInternal.at<f64>(1, 2);
+		Result.X = TransformInternal.at<f64>(0, 2);
+		Result.Y = TransformInternal.at<f64>(1, 2);
+		Result.Z = atan2(TransformInternal.at<f64>(1, 0), TransformInternal.at<f64>(0, 0));
 	}
 
 	return Result;
 }
 
-inline void
-CopyImage(image* Dst, image* Src)
-{
-	Src->copyTo(*Dst);
-}
-
-inline void WarpAffine(image* Src, image* Dst, v3 Transform)
+inline void WarpAffine(image* Dst, image* Src, v3 Transform)
 {
 	cv::Mat Matrix(2, 3, CV_32FC1);
 	Matrix.at<f32>(0, 0) = cos(Transform.Z);
