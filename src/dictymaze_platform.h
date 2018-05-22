@@ -24,5 +24,8 @@ typedef double f64;
 void
 Dictymaze();
 
+void
+MakeDirectory(char* PathName);
+
 #define DICTYMAZE_PLATFORM_H
 #endif

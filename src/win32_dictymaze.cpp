@@ -5,6 +5,12 @@
 
 #include <windows.h>
 
+void
+MakeDirectory(char* PathName)
+{
+	CreateDirectory(PathName, 0);
+}
+
 int CALLBACK WinMain(
     HINSTANCE hInstance,
     HINSTANCE hPrevInstance,

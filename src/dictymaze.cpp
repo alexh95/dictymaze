@@ -71,6 +71,15 @@ void
 SaveImageSet(image_set* ImageSet)
 {
 	char FileName[256] = {};
+	sprintf(FileName, "../data");
+	MakeDirectory(FileName);
+
+	sprintf(FileName, "../data/%s", ImageSet->Directory);
+	MakeDirectory(FileName);
+	
+	sprintf(FileName, "../data/%s/%s", ImageSet->Directory, ImageSet->Name);
+	MakeDirectory(FileName);
+
 	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
 	{
 		sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex);
@@ -206,6 +215,16 @@ MorphClose(image* Image)
 	return Result;
 }
 
+image
+ExtractMaze(image* Image)
+{
+	image Edge = Laplacian(Image);
+	ShowImage("Output 1", &Edge);
+	Edge = MorphOpen(&Edge);
+	Edge = AdaptiveThreshold(&Edge);
+	return Edge;
+}
+
 void
 Dictymaze()
 {
@@ -235,16 +254,10 @@ Dictymaze()
 		image* StabilizedImage = GetImage(&StabilizedImageSet, ImageIndex);
 
 		image Difference = ImageDifference(StabilizedImage, PrevStabilizedImage);
+		// ShowImage(OutputWindowName1, &Difference);
 
-		// TODO(alex): extract labyrinth
-		image Edge = Laplacian(StabilizedImage);
-		ShowImage(OutputWindowName1, &Edge);
-
-		// Edge = Invert(&Edge);
-		Edge = MorphOpen(&Edge);
-		Edge = AdaptiveThreshold(&Edge);
-		// Edge = MorphClose(&Edge);
-		ShowImage(OutputWindowName2, &Edge);
+		image Maze = ExtractMaze(StabilizedImage);
+		ShowImage(OutputWindowName2, &Maze);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)
