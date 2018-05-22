@@ -91,14 +91,12 @@ void
 StabilizeImages(image_set* DstImageSet, image_set* SrcImageSet)
 {
 	image* PrevImage = GetImage(SrcImageSet, 0);
-	image PrevImageEq = CloneImage(PrevImage);
-	EqualizeHistogram(&PrevImageEq, PrevImage);
+	image PrevImageEq = EqualizeHistogram(PrevImage);
 	v3 Trajectory = {};
 	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
 	{
 		image* NextImage = GetImage(SrcImageSet, ImageIndex);
-		image NextImageEq = CloneImage(NextImage);
-		EqualizeHistogram(&NextImageEq, NextImage);
+		image NextImageEq = EqualizeHistogram(NextImage);
 
 		v2 PrevCorners[MAX_CORNERS] = {};
 		v2 NextCorners[MAX_CORNERS] = {};
@@ -108,7 +106,7 @@ StabilizeImages(image_set* DstImageSet, image_set* SrcImageSet)
 		v3 Transform = EstimateRigidTransform(PrevCorners, NextCorners, FilteredCornerCount, false);
 		Trajectory += Transform;
 		image* DstImage = GetImage(DstImageSet, ImageIndex);
-		WarpAffine(DstImage, &NextImageEq, -Trajectory);
+		WarpAffine(DstImage, NextImage, -Trajectory);
 
 		PrevImageEq = NextImageEq;
 	}
@@ -160,7 +158,7 @@ ImageDifference(image* A, image* B)
 }
 
 image
-ImageThreshold(image* Image, u32 Threshold)
+Threshold(image* Image, u32 Threshold)
 {
 	return *Image > Threshold;
 }
@@ -190,27 +188,27 @@ AdaptiveThreshold(image* Image)
 {
 	image Result;
 
-	cv::adaptiveThreshold(*Image, Result, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 3, 0);
+	cv::adaptiveThreshold(*Image, Result, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 5, 0);
 
 	return Result;
 }
 
 image
-MorphOpen(image* Image)
+MorphOpen(image* Image, u32 KernelSize)
 {
 	image Result;
 
-	cv::morphologyEx(*Image, Result, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(3, 3)));
+	cv::morphologyEx(*Image, Result, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(KernelSize, KernelSize)));
 
 	return Result;
 }
 
 image
-MorphClose(image* Image)
+MorphClose(image* Image, u32 KernelSize)
 {
 	image Result;
 
-	cv::morphologyEx(*Image, Result, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(3, 3)));
+	cv::morphologyEx(*Image, Result, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(KernelSize, KernelSize)));
 
 	return Result;
 }
@@ -218,11 +216,15 @@ MorphClose(image* Image)
 image
 ExtractMaze(image* Image)
 {
-	image Edge = Laplacian(Image);
-	ShowImage("Output 1", &Edge);
-	Edge = MorphOpen(&Edge);
-	Edge = AdaptiveThreshold(&Edge);
-	return Edge;
+	image Maze = EqualizeHistogram(Image);
+	Maze = Laplacian(&Maze);
+	Maze = MorphOpen(&Maze, 3);
+	Maze = AdaptiveThreshold(&Maze);
+	Maze = MorphClose(&Maze, 3);
+	// ShowImage("Output 1", &Maze);
+	Maze = MorphOpen(&Maze, 3);
+	// ShowImage("Output 2", &Maze);
+	return Maze;
 }
 
 void
@@ -254,7 +256,7 @@ Dictymaze()
 		image* StabilizedImage = GetImage(&StabilizedImageSet, ImageIndex);
 
 		image Difference = ImageDifference(StabilizedImage, PrevStabilizedImage);
-		// ShowImage(OutputWindowName1, &Difference);
+		ShowImage(OutputWindowName1, StabilizedImage);
 
 		image Maze = ExtractMaze(StabilizedImage);
 		ShowImage(OutputWindowName2, &Maze);

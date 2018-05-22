@@ -49,10 +49,14 @@ WaitKey(u32 Timeout)
 	return cv::waitKeyEx(Timeout);
 }
 
-inline void
-EqualizeHistogram(image* DstImage, image* SrcImage)
+inline image
+EqualizeHistogram(image* SrcImage)
 {
-	cv::equalizeHist(*SrcImage, *DstImage);
+	image Result;
+
+	cv::equalizeHist(*SrcImage, Result);
+
+	return Result;
 }
 
 inline void
