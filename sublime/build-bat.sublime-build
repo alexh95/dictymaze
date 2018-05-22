@@ -1,4 +1,0 @@
-{
-	"cmd": "win32_build.bat",
-	"working_dir": "$folder"
-}
