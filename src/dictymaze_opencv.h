@@ -7,5 +7,11 @@
 
 typedef cv::Mat image;
 
+struct point_i32
+{
+	i32 I;
+	i32 J;
+};
+
 #define DICTYMAZE_OPENCV_H
 #endif

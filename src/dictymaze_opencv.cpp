@@ -2,9 +2,53 @@
 #include "dictymaze_math.h"
 
 inline image
-Image(u32 Rows, u32 Cols, u32 Format)
+ImageU8(u32 Rows, u32 Cols, u8 Value = 0)
 {
-	return image(Rows, Cols, Format);
+	return image(Rows, Cols, CV_8UC1, cv::Scalar(Value));
+}
+
+inline image
+ImageU8(image* Image, u8 Value = 0)
+{
+	return ImageU8(Image->rows, Image->cols, Value);
+}
+
+inline u8
+GetAtU8(image* Image, point_i32 Point)
+{
+	u8 Result = Image->at<u8>(Point.I, Point.J);
+	return Result;
+}
+
+inline void
+SetAtU8(image* Image, point_i32 Point, u8 Value)
+{
+	Image->at<u8>(Point.I, Point.J) = Value;
+}
+
+inline image
+ImageI32(u32 Rows, u32 Cols, i32 Value = 0)
+{
+	return image(Rows, Cols, CV_32SC1, cv::Scalar(Value));
+}
+
+inline image
+ImageI32(image* Image, i32 Value = 0)
+{
+	return ImageI32(Image->rows, Image->cols, Value);
+}
+
+inline i32
+GetAtI32(image* Image, point_i32 Point)
+{
+	i32 Result = Image->at<i32>(Point.I, Point.J);
+	return Result;
+}
+
+inline void
+SetAtI32(image* Image, point_i32 Point, i32 Value)
+{
+	Image->at<i32>(Point.I, Point.J) = Value;
 }
 
 inline void
@@ -154,4 +198,29 @@ inline void WarpAffine(image* Dst, image* Src, v3 Transform)
 	Matrix.at<f32>(0, 2) = Transform.X;
 	Matrix.at<f32>(1, 2) = Transform.Y;
 	cv::warpAffine(*Src, *Dst, Matrix, Src->size());
+}
+
+inline point_i32
+PointI32(i32 I, i32 J)
+{
+	point_i32 Result = point_i32{I, J};
+	return Result;
+}
+
+inline point_i32
+operator+(point_i32 A, point_i32 B)
+{
+	point_i32 Result;
+
+	Result.I = A.I + B.I;
+	Result.J = A.J + B.J;
+
+	return Result;
+}
+
+inline point_i32
+operator+=(point_i32& A, point_i32 B)
+{
+	A = A + B;
+	return A;
 }

@@ -213,6 +213,59 @@ MorphClose(image* Image, u32 KernelSize)
 	return Result;
 }
 
+inline b32
+PointInBounds(image* Image, point_i32 Point)
+{
+	b32 Result = (Point.I >= 0 && Point.I < Image->rows) && (Point.J >= 0 && Point.J < Image->cols);
+	return Result;
+}
+
+u32
+Label(image* Src, image* Labels)
+{
+	i32 LabelCount = 0;
+	point_i32 Neighbours[4] = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}};
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = PointI32(Row, Col);
+			u8 Value = GetAtU8(Src, Point);
+
+			if (Value > 0)
+			{
+				b32 LabelNotSet = true;
+				for (i32 NeighbourIndex = 0; NeighbourIndex < 4; ++NeighbourIndex)
+				{
+					point_i32 NeighbourPoint = Point + Neighbours[NeighbourIndex];
+					if (PointInBounds(Labels, NeighbourPoint))
+					{
+						i32 NeighbourLabel = GetAtI32(Labels, NeighbourPoint);
+						if (NeighbourLabel > 0)
+						{
+							SetAtI32(Labels, Point, NeighbourLabel);
+							LabelNotSet = false;
+							break;
+						}
+					}
+				}
+				if (LabelNotSet) 
+				{
+					SetAtI32(Labels, Point, ++LabelCount);
+				}
+			}
+		}
+	}
+
+	return LabelCount;
+}
+
+void
+ExtractLargestLabeledFeatures(image* Src, image* Labels, u32 LabelCount, image* Dst)
+{
+	// TODO(alex): implement largest object filtering
+}
+
 image
 ExtractMaze(image* Image)
 {
@@ -221,8 +274,11 @@ ExtractMaze(image* Image)
 	Maze = MorphOpen(&Maze, 3);
 	Maze = AdaptiveThreshold(&Maze);
 	Maze = MorphClose(&Maze, 3);
-	// ShowImage("Output 1", &Maze);
 	Maze = MorphOpen(&Maze, 3);
+	image MazeLabels = ImageI32(&Maze);
+	u32 LabelCount = Label(&Maze, &MazeLabels);
+	ExtractLargestLabeledFeatures(&Maze, &MazeLabels, LabelCount, &Maze);
+	// ShowImage("Output 1", &Maze);
 	// ShowImage("Output 2", &Maze);
 	return Maze;
 }
@@ -246,7 +302,7 @@ Dictymaze()
 	CreateNamedWindow(OutputWindowName2);
 
 	b32 Running = true;
-	b32 Paused = false; //true
+	b32 Paused = true;
 	u32 FrameTime = 33;
 	u32 ImageIndex = 1;
 	while (Running)
