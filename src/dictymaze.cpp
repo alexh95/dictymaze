@@ -260,10 +260,68 @@ Label(image* Src, image* Labels)
 	return LabelCount;
 }
 
+struct image_object
+{
+	u32 Label;
+	u32 PixelSize;
+};
+
 void
-ExtractLargestLabeledFeatures(image* Src, image* Labels, u32 LabelCount, image* Dst)
+ExtractLargestLabeledFeatures(image* Src, image* Labels, u32 LabelCount, image* Dst, u32 MaxObjectCount)
 {
 	// TODO(alex): implement largest object filtering
+	image_object Objects[65536] = {};
+	for (u32 ObjectIndex = 0; ObjectIndex < LabelCount; ++ObjectIndex)
+	{
+		Objects[ObjectIndex].Label = ObjectIndex;
+		Objects[ObjectIndex].PixelSize = 0;
+	}
+
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = PointI32(Row, Col);
+			i32 Label = GetAtI32(Labels, Point);
+			if (Label > 0)
+			{
+				++Objects[Label].PixelSize;
+			}
+		}
+	}
+
+	for (u32 ObjectIndex1 = 0; ObjectIndex1 < LabelCount; ++ObjectIndex1)
+	{
+		for (u32 ObjectIndex2 = ObjectIndex1 + 1; ObjectIndex2 <= LabelCount; ++ObjectIndex2)
+		{
+			if (Objects[ObjectIndex1].PixelSize < Objects[ObjectIndex2].PixelSize)
+			{
+				image_object Temp = Objects[ObjectIndex1];
+				Objects[ObjectIndex1] = Objects[ObjectIndex2];
+				Objects[ObjectIndex2] = Temp;
+			}
+		}
+	}
+
+	u8 LabelValue[65536] = {};
+	for (u32 ObjectIndex = 0; ObjectIndex < MaxObjectCount; ++ObjectIndex)
+	{
+		LabelValue[Objects[ObjectIndex].Label] = 255;
+	}
+
+	u32 ObjectsDeleted = LabelCount - MaxObjectCount;
+	if (ObjectsDeleted > 0)
+	{
+		for (i32 Row = 0; Row < Src->rows; ++Row)
+		{
+			for (i32 Col = 0; Col < Src->cols; ++Col)
+			{
+				point_i32 Point = PointI32(Row, Col);
+				i32 Label = GetAtI32(Labels, Point);
+				SetAtU8(Dst, Point, LabelValue[Label]);
+			}
+		}
+	}
 }
 
 image
@@ -277,9 +335,9 @@ ExtractMaze(image* Image)
 	Maze = MorphOpen(&Maze, 3);
 	image MazeLabels = ImageI32(&Maze);
 	u32 LabelCount = Label(&Maze, &MazeLabels);
-	ExtractLargestLabeledFeatures(&Maze, &MazeLabels, LabelCount, &Maze);
-	// ShowImage("Output 1", &Maze);
-	// ShowImage("Output 2", &Maze);
+	ShowImage("Output 1", &Maze);
+	ExtractLargestLabeledFeatures(&Maze, &MazeLabels, LabelCount, &Maze, 1);
+	ShowImage("Output 2", &Maze);
 	return Maze;
 }
 
