@@ -223,6 +223,7 @@ PointInBounds(image* Image, point_i32 Point)
 u32
 Label(image* Src, image* Labels)
 {
+	// TODO(alex): incorrect label propagation
 	i32 LabelCount = 0;
 	point_i32 Neighbours[4] = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}};
 	for (i32 Row = 0; Row < Src->rows; ++Row)
