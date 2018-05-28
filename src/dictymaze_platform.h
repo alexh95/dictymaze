@@ -17,6 +17,8 @@ typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
 
+#define Assert(Expression) if (!(Expression)) { *(i32*) 0 = 0; }
+
 #define ArrayCount(Array) (sizeof(Array)/(sizeof(Array[0])))
 
 #define Min(A, B) ((A < B) ? (A) : (B))

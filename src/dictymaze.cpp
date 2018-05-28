@@ -220,39 +220,57 @@ PointInBounds(image* Image, point_i32 Point)
 	return Result;
 }
 
+point_i32 NeighbourDeltas[8] = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
+
+// TODO(alex): replace with something faster
+void
+LabelFloodFill(image* Src, image* Labels, point_i32 Point, i32 Label)
+{
+	SetAtI32(Labels, Point, Label);
+	point_i32 NextPoints[100000] = {Point};
+	u32 NextPointCount = 1;
+
+	for (u32 NextPointIndex = 0; NextPointIndex < NextPointCount; ++NextPointIndex)
+	{
+		point_i32 NextPoint = NextPoints[NextPointIndex];
+		for (u32 NeighbourIndex = 0; NeighbourIndex < 8; ++NeighbourIndex)
+		{
+			point_i32 NeighbourPoint = NextPoint + NeighbourDeltas[NeighbourIndex];
+			if (NeighbourPoint.I >= 0 && NeighbourPoint.J >= 0 && NeighbourPoint.I < Labels->rows && NeighbourPoint.J < Labels->cols)
+			{
+				u8 NeighbourValue = GetAtU8(Src, NeighbourPoint);
+				if (NeighbourValue > 0)
+				{
+					i32 NeighbourLabel = GetAtI32(Labels, NeighbourPoint);
+					if (NeighbourLabel == 0)
+					{
+						SetAtI32(Labels, NeighbourPoint, Label);
+						++NextPointCount;
+						Assert(NextPointCount < ArrayCount(NextPoints));
+						NextPoints[NextPointCount] = NeighbourPoint;
+					}
+				}
+			}
+		}
+	}
+}
+
 u32
 Label(image* Src, image* Labels)
 {
-	// TODO(alex): incorrect label propagation
 	i32 LabelCount = 0;
-	point_i32 Neighbours[4] = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}};
 	for (i32 Row = 0; Row < Src->rows; ++Row)
 	{
 		for (i32 Col = 0; Col < Src->cols; ++Col)
 		{
-			point_i32 Point = PointI32(Row, Col);
+			point_i32 Point = {Row, Col};
 			u8 Value = GetAtU8(Src, Point);
-
 			if (Value > 0)
 			{
-				b32 LabelNotSet = true;
-				for (i32 NeighbourIndex = 0; NeighbourIndex < 4; ++NeighbourIndex)
+				i32 Label = GetAtI32(Labels, Point);
+				if (Label == 0)
 				{
-					point_i32 NeighbourPoint = Point + Neighbours[NeighbourIndex];
-					if (PointInBounds(Labels, NeighbourPoint))
-					{
-						i32 NeighbourLabel = GetAtI32(Labels, NeighbourPoint);
-						if (NeighbourLabel > 0)
-						{
-							SetAtI32(Labels, Point, NeighbourLabel);
-							LabelNotSet = false;
-							break;
-						}
-					}
-				}
-				if (LabelNotSet) 
-				{
-					SetAtI32(Labels, Point, ++LabelCount);
+					LabelFloodFill(Src, Labels, Point, ++LabelCount);
 				}
 			}
 		}
@@ -272,6 +290,7 @@ ExtractLargestLabeledFeatures(image* Src, image* Labels, u32 LabelCount, image* 
 {
 	// TODO(alex): implement largest object filtering
 	image_object Objects[65536] = {};
+	Assert(LabelCount < ArrayCount(Objects));
 	for (u32 ObjectIndex = 0; ObjectIndex < LabelCount; ++ObjectIndex)
 	{
 		Objects[ObjectIndex].Label = ObjectIndex;
@@ -337,7 +356,7 @@ ExtractMaze(image* Image)
 	image MazeLabels = ImageI32(&Maze);
 	u32 LabelCount = Label(&Maze, &MazeLabels);
 	ShowImage("Output 1", &Maze);
-	ExtractLargestLabeledFeatures(&Maze, &MazeLabels, LabelCount, &Maze, 1);
+	ExtractLargestLabeledFeatures(&Maze, &MazeLabels, LabelCount, &Maze, 10);
 	ShowImage("Output 2", &Maze);
 	return Maze;
 }
