@@ -93,14 +93,11 @@ WaitKey(u32 Timeout)
 	return cv::waitKeyEx(Timeout);
 }
 
-inline image
-EqualizeHistogram(image* SrcImage)
+inline void
+EqualizeHistogram(image* Src, image* Dst)
 {
-	image Result;
-
-	cv::equalizeHist(*SrcImage, Result);
-
-	return Result;
+	Assert(Dst->data);
+	cv::equalizeHist(*Src, *Dst);
 }
 
 inline void
@@ -188,7 +185,8 @@ EstimateRigidTransform(
 	return Result;
 }
 
-inline void WarpAffine(image* Dst, image* Src, v3 Transform)
+inline void
+WarpAffine(image* Dst, image* Src, v3 Transform)
 {
 	cv::Mat Matrix(2, 3, CV_32FC1);
 	Matrix.at<f32>(0, 0) = cos(Transform.Z);
@@ -198,6 +196,42 @@ inline void WarpAffine(image* Dst, image* Src, v3 Transform)
 	Matrix.at<f32>(0, 2) = Transform.X;
 	Matrix.at<f32>(1, 2) = Transform.Y;
 	cv::warpAffine(*Src, *Dst, Matrix, Src->size());
+}
+
+inline void
+MorphOpen(image* Src, image* Dst, u32 KernelSize)
+{
+	Assert(Dst->data);
+	cv::morphologyEx(*Src, *Dst, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(KernelSize, KernelSize)));
+}
+
+inline void
+MorphClose(image* Src, image* Dst, u32 KernelSize)
+{
+	Assert(Dst->data);
+	cv::morphologyEx(*Src, *Dst, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(KernelSize, KernelSize)));
+}
+
+inline void
+AdaptiveThreshold(image* Src, image* Dst)
+{
+	Assert(Dst->data);
+	cv::adaptiveThreshold(*Src, *Dst, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 5, 0);
+}
+
+inline u32
+ConnectedComponents(image* Src, image* Dst)
+{
+	Assert(Dst->data);
+	u32 Result = cv::connectedComponents(*Src, *Dst, 8, CV_32SC1);
+	return Result;
+}
+
+inline void
+Laplacian(image* Src, image* Dst)
+{
+	Assert(Dst->data);
+	cv::Laplacian(*Src, *Dst, CV_8U, 3);
 }
 
 inline point_i32

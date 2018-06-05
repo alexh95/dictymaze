@@ -91,12 +91,14 @@ void
 StabilizeImages(image_set* DstImageSet, image_set* SrcImageSet)
 {
 	image* PrevImage = GetImage(SrcImageSet, 0);
-	image PrevImageEq = EqualizeHistogram(PrevImage);
+	image PrevImageEq = ImageU8(PrevImage);
+	EqualizeHistogram(PrevImage, &PrevImageEq);
 	v3 Trajectory = {};
 	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
 	{
 		image* NextImage = GetImage(SrcImageSet, ImageIndex);
-		image NextImageEq = EqualizeHistogram(NextImage);
+		image NextImageEq = ImageU8(NextImage);
+		EqualizeHistogram(NextImage, &NextImageEq);
 
 		v2 PrevCorners[MAX_CORNERS] = {};
 		v2 NextCorners[MAX_CORNERS] = {};
@@ -164,16 +166,6 @@ Threshold(image* Image, u32 Threshold)
 }
 
 image
-Laplacian(image* Image)
-{
-	image Result = CloneImage(Image);
-
-	cv::Laplacian(*Image, Result, CV_8U, 3);
-
-	return Result;
-}
-
-image
 Invert(image* Image)
 {
 	image Result = CloneImage(Image);
@@ -183,100 +175,11 @@ Invert(image* Image)
 	return Result;
 }
 
-image
-AdaptiveThreshold(image* Image)
-{
-	image Result;
-
-	cv::adaptiveThreshold(*Image, Result, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 5, 0);
-
-	return Result;
-}
-
-image
-MorphOpen(image* Image, u32 KernelSize)
-{
-	image Result;
-
-	cv::morphologyEx(*Image, Result, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(KernelSize, KernelSize)));
-
-	return Result;
-}
-
-image
-MorphClose(image* Image, u32 KernelSize)
-{
-	image Result;
-
-	cv::morphologyEx(*Image, Result, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(KernelSize, KernelSize)));
-
-	return Result;
-}
-
 inline b32
 PointInBounds(image* Image, point_i32 Point)
 {
 	b32 Result = (Point.I >= 0 && Point.I < Image->rows) && (Point.J >= 0 && Point.J < Image->cols);
 	return Result;
-}
-
-point_i32 NeighbourDeltas[8] = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
-
-// TODO(alex): replace with something faster
-void
-LabelFloodFill(image* Src, image* Labels, point_i32 Point, i32 Label)
-{
-	SetAtI32(Labels, Point, Label);
-	point_i32 NextPoints[100000] = {Point};
-	u32 NextPointCount = 1;
-
-	for (u32 NextPointIndex = 0; NextPointIndex < NextPointCount; ++NextPointIndex)
-	{
-		point_i32 NextPoint = NextPoints[NextPointIndex];
-		for (u32 NeighbourIndex = 0; NeighbourIndex < 8; ++NeighbourIndex)
-		{
-			point_i32 NeighbourPoint = NextPoint + NeighbourDeltas[NeighbourIndex];
-			if (NeighbourPoint.I >= 0 && NeighbourPoint.J >= 0 && NeighbourPoint.I < Labels->rows && NeighbourPoint.J < Labels->cols)
-			{
-				u8 NeighbourValue = GetAtU8(Src, NeighbourPoint);
-				if (NeighbourValue > 0)
-				{
-					i32 NeighbourLabel = GetAtI32(Labels, NeighbourPoint);
-					if (NeighbourLabel == 0)
-					{
-						SetAtI32(Labels, NeighbourPoint, Label);
-						++NextPointCount;
-						Assert(NextPointCount < ArrayCount(NextPoints));
-						NextPoints[NextPointCount] = NeighbourPoint;
-					}
-				}
-			}
-		}
-	}
-}
-
-u32
-Label(image* Src, image* Labels)
-{
-	i32 LabelCount = 0;
-	for (i32 Row = 0; Row < Src->rows; ++Row)
-	{
-		for (i32 Col = 0; Col < Src->cols; ++Col)
-		{
-			point_i32 Point = {Row, Col};
-			u8 Value = GetAtU8(Src, Point);
-			if (Value > 0)
-			{
-				i32 Label = GetAtI32(Labels, Point);
-				if (Label == 0)
-				{
-					LabelFloodFill(Src, Labels, Point, ++LabelCount);
-				}
-			}
-		}
-	}
-
-	return LabelCount;
 }
 
 struct image_object
@@ -347,14 +250,15 @@ ExtractLargestLabeledFeatures(image* Src, image* Labels, u32 LabelCount, image* 
 image
 ExtractMaze(image* Image)
 {
-	image Maze = EqualizeHistogram(Image);
-	Maze = Laplacian(&Maze);
-	Maze = MorphOpen(&Maze, 3);
-	Maze = AdaptiveThreshold(&Maze);
-	Maze = MorphClose(&Maze, 3);
-	Maze = MorphOpen(&Maze, 3);
+	image Maze = ImageU8(Image);
+	EqualizeHistogram(Image, &Maze);
+	Laplacian(&Maze, &Maze);
+	MorphOpen(&Maze, &Maze, 3);
+	AdaptiveThreshold(&Maze, &Maze);
+	MorphClose(&Maze, &Maze, 3);
+	MorphOpen(&Maze, &Maze, 3);
 	image MazeLabels = ImageI32(&Maze);
-	u32 LabelCount = Label(&Maze, &MazeLabels);
+	u32 LabelCount = ConnectedComponents(&Maze, &MazeLabels);
 	ShowImage("Output 1", &Maze);
 	ExtractLargestLabeledFeatures(&Maze, &MazeLabels, LabelCount, &Maze, 10);
 	ShowImage("Output 2", &Maze);
