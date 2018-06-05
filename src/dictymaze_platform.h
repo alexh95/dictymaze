@@ -17,17 +17,30 @@ typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
 
+typedef size_t size;
+
 #define Assert(Expression) if (!(Expression)) { *(i32*) 0 = 0; }
 
 #define ArrayCount(Array) (sizeof(Array)/(sizeof(Array[0])))
 
 #define Min(A, B) ((A < B) ? (A) : (B))
 
+#define SizeOf(Size) sizeof(Size)
+
+void*
+AllocateOnStack(size Size);
+
 void
-Dictymaze();
+FreeOnStack(void* Buffer);
+
+void
+MemoryZero(void* Buffer, size Length);
 
 void
 MakeDirectory(char* PathName);
+
+void
+Dictymaze();
 
 #define DICTYMAZE_PLATFORM_H
 #endif

@@ -189,17 +189,16 @@ struct image_object
 };
 
 void
-ExtractLargestLabeledFeatures(image* Src, image* Labels, u32 LabelCount, image* Dst, u32 MaxObjectCount)
+ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCount, u32 MinObjectSize, u32 MaxObjectCount)
 {
-	// TODO(alex): implement largest object filtering
-	image_object Objects[65536] = {};
-	Assert(LabelCount < ArrayCount(Objects));
-	for (u32 ObjectIndex = 0; ObjectIndex < LabelCount; ++ObjectIndex)
+	Assert(Dst->data);
+	// TODO(alex): prevent stack overflow
+	image_object* Objects = (image_object*)AllocateOnStack((LabelCount + 1) * SizeOf(image_object));
+	for (u32 Label = 0; Label <= LabelCount; ++Label)
 	{
-		Objects[ObjectIndex].Label = ObjectIndex;
-		Objects[ObjectIndex].PixelSize = 0;
+		Objects[Label].Label = Label;
+		Objects[Label].PixelSize = 0;
 	}
-
 	for (i32 Row = 0; Row < Src->rows; ++Row)
 	{
 		for (i32 Col = 0; Col < Src->cols; ++Col)
@@ -213,24 +212,45 @@ ExtractLargestLabeledFeatures(image* Src, image* Labels, u32 LabelCount, image* 
 		}
 	}
 
-	for (u32 ObjectIndex1 = 0; ObjectIndex1 < LabelCount; ++ObjectIndex1)
+	u32 LargeObjectCount = 0;
+	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
 	{
-		for (u32 ObjectIndex2 = ObjectIndex1 + 1; ObjectIndex2 <= LabelCount; ++ObjectIndex2)
+		if (Objects[ObjectIndex].PixelSize >= MinObjectSize)
 		{
-			if (Objects[ObjectIndex1].PixelSize < Objects[ObjectIndex2].PixelSize)
+			++LargeObjectCount;
+		}
+	}
+	image_object* LargeObjects = (image_object*)AllocateOnStack(LargeObjectCount * SizeOf(image_object));
+	u32 LargeObjectIndex = 0;
+	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
+	{
+		if (Objects[ObjectIndex].PixelSize >= MinObjectSize)
+		{
+			LargeObjects[LargeObjectIndex++] = Objects[ObjectIndex];
+		}
+	}
+	FreeOnStack(Objects);
+
+	for (u32 ObjectIndex1 = 0; ObjectIndex1 < LargeObjectCount; ++ObjectIndex1)
+	{
+		for (u32 ObjectIndex2 = ObjectIndex1 + 1; ObjectIndex2 < LargeObjectCount; ++ObjectIndex2)
+		{
+			if (LargeObjects[ObjectIndex1].PixelSize < LargeObjects[ObjectIndex2].PixelSize)
 			{
-				image_object Temp = Objects[ObjectIndex1];
-				Objects[ObjectIndex1] = Objects[ObjectIndex2];
-				Objects[ObjectIndex2] = Temp;
+				image_object Temp = LargeObjects[ObjectIndex1];
+				LargeObjects[ObjectIndex1] = LargeObjects[ObjectIndex2];
+				LargeObjects[ObjectIndex2] = Temp;
 			}
 		}
 	}
 
-	u8 LabelValue[65536] = {};
+	u8* LabelValue = (u8*)AllocateOnStack(LabelCount + 1);
+	MemoryZero(LabelValue, LabelCount + 1);
 	for (u32 ObjectIndex = 0; ObjectIndex < MaxObjectCount; ++ObjectIndex)
 	{
-		LabelValue[Objects[ObjectIndex].Label] = 255;
+		LabelValue[LargeObjects[ObjectIndex].Label] = 255;
 	}
+	FreeOnStack(LargeObjects);
 
 	u32 ObjectsDeleted = LabelCount - MaxObjectCount;
 	if (ObjectsDeleted > 0)
@@ -250,8 +270,8 @@ ExtractLargestLabeledFeatures(image* Src, image* Labels, u32 LabelCount, image* 
 image
 ExtractMaze(image* Image)
 {
-	image Maze = ImageU8(Image);
-	EqualizeHistogram(Image, &Maze);
+	image Maze = CloneImage(Image);
+	EqualizeHistogram(&Maze, &Maze);
 	Laplacian(&Maze, &Maze);
 	MorphOpen(&Maze, &Maze, 3);
 	AdaptiveThreshold(&Maze, &Maze);
@@ -259,9 +279,9 @@ ExtractMaze(image* Image)
 	MorphOpen(&Maze, &Maze, 3);
 	image MazeLabels = ImageI32(&Maze);
 	u32 LabelCount = ConnectedComponents(&Maze, &MazeLabels);
-	ShowImage("Output 1", &Maze);
-	ExtractLargestLabeledFeatures(&Maze, &MazeLabels, LabelCount, &Maze, 10);
-	ShowImage("Output 2", &Maze);
+	ExtractLargestLabeledFeatures(&Maze, &Maze, &MazeLabels, LabelCount, 15, 30);
+	MorphClose(&Maze, &Maze, 5);
+	// TODO(alex): fill the small holes
 	return Maze;
 }
 
@@ -286,18 +306,26 @@ Dictymaze()
 	b32 Running = true;
 	b32 Paused = true;
 	u32 FrameTime = 33;
-	u32 ImageIndex = 1;
+	u32 ImageIndex = 250;
 	while (Running)
 	{
 		// image* Image = GetImage(&ImageSet, ImageIndex);
 		image* PrevStabilizedImage = GetImage(&StabilizedImageSet, PrevImageIndex(ImageIndex));
+		image PrevStabilizedImageEq = CloneImage(PrevStabilizedImage);
+		EqualizeHistogram(&PrevStabilizedImageEq, &PrevStabilizedImageEq);
+
 		image* StabilizedImage = GetImage(&StabilizedImageSet, ImageIndex);
+		image StabilizedImageEq = CloneImage(StabilizedImage);
+		EqualizeHistogram(&StabilizedImageEq, &StabilizedImageEq);
 
-		image Difference = ImageDifference(StabilizedImage, PrevStabilizedImage);
-		ShowImage(OutputWindowName1, StabilizedImage);
+		image Maze = ExtractMaze(&StabilizedImageEq);
+		image Difference = StabilizedImageEq - PrevStabilizedImageEq;
 
-		image Maze = ExtractMaze(StabilizedImage);
-		ShowImage(OutputWindowName2, &Maze);
+		image IM = StabilizedImageEq & Maze;
+		image DM = Difference & Maze;
+		ShowImage(OutputWindowName1, &DM);
+		DM = DM > 128;
+		ShowImage(OutputWindowName2, &DM);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)

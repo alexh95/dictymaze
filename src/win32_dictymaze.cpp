@@ -5,6 +5,24 @@
 
 #include <windows.h>
 
+void*
+AllocateOnStack(size Size)
+{
+	return _malloca(Size);
+}
+
+void
+FreeOnStack(void* Buffer)
+{
+	_freea(Buffer);
+}
+
+void
+MemoryZero(void* Buffer, size Length)
+{
+	ZeroMemory(Buffer, Length);
+}
+
 void
 MakeDirectory(char* PathName)
 {
