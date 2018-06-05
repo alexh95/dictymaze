@@ -36,7 +36,7 @@ GetImageSet(char* Name, char* Directory, b32 Load = false)
 		if (Name && Load)
 		{
 			char FileName[256] = {};
-			sprintf(FileName, "../data/%s/%s/%s_%d.tif", Result.Directory, Result.Name, Result.Name, ImageIndex);
+			sprintf(FileName, "data\\%s\\%s\\%s_%d.tif", Result.Directory, Result.Name, Result.Name, ImageIndex);
 			Result.Images[ImageIndex] = ReadGrayscaleImage(FileName);
 		}
 		else
@@ -58,7 +58,7 @@ GetImage(image_set* ImageSet, u32 ImageIndex)
 		if (StringLength(ImageSet->Name))
 		{
 			char FileName[256] = {};
-			sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex);
+			sprintf(FileName, "data\\%s\\%s\\%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex);
 			ImageSet->Images[ImageIndex] = ReadGrayscaleImage(FileName);
 			Result = ImageSet->Images + ImageIndex;
 		}
@@ -71,18 +71,18 @@ void
 SaveImageSet(image_set* ImageSet)
 {
 	char FileName[256] = {};
-	sprintf(FileName, "../data");
+	sprintf(FileName, "data");
 	MakeDirectory(FileName);
 
-	sprintf(FileName, "../data/%s", ImageSet->Directory);
+	sprintf(FileName, "data\\%s", ImageSet->Directory);
 	MakeDirectory(FileName);
 	
-	sprintf(FileName, "../data/%s/%s", ImageSet->Directory, ImageSet->Name);
+	sprintf(FileName, "data\\%s\\%s", ImageSet->Directory, ImageSet->Name);
 	MakeDirectory(FileName);
 
 	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
 	{
-		sprintf(FileName, "../data/%s/%s/%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex);
+		sprintf(FileName, "data\\%s\\%s\\%s_%d.tif", ImageSet->Directory, ImageSet->Name, ImageSet->Name, ImageIndex);
 		WriteImage(FileName, GetImage(ImageSet, ImageIndex));
 	}
 }
@@ -153,118 +153,11 @@ NextImageIndex(u32 ImageIndex)
 	return NextImageIndex;
 }
 
-image
-ImageDifference(image* A, image* B)
-{
-	return *A - *B;
-}
-
-image
-Threshold(image* Image, u32 Threshold)
-{
-	return *Image > Threshold;
-}
-
-image
-Invert(image* Image)
-{
-	image Result = CloneImage(Image);
-
-	cv::bitwise_not(*Image, Result);
-
-	return Result;
-}
-
 inline b32
 PointInBounds(image* Image, point_i32 Point)
 {
 	b32 Result = (Point.I >= 0 && Point.I < Image->rows) && (Point.J >= 0 && Point.J < Image->cols);
 	return Result;
-}
-
-struct image_object
-{
-	u32 Label;
-	u32 PixelSize;
-};
-
-void
-ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCount, u32 MinObjectSize, u32 MaxObjectCount)
-{
-	Assert(Dst->data);
-	// TODO(alex): prevent stack overflow
-	image_object* Objects = (image_object*)AllocateOnStack((LabelCount + 1) * SizeOf(image_object));
-	for (u32 Label = 0; Label <= LabelCount; ++Label)
-	{
-		Objects[Label].Label = Label;
-		Objects[Label].PixelSize = 0;
-	}
-	for (i32 Row = 0; Row < Src->rows; ++Row)
-	{
-		for (i32 Col = 0; Col < Src->cols; ++Col)
-		{
-			point_i32 Point = PointI32(Row, Col);
-			i32 Label = GetAtI32(Labels, Point);
-			if (Label > 0)
-			{
-				++Objects[Label].PixelSize;
-			}
-		}
-	}
-
-	u32 LargeObjectCount = 0;
-	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
-	{
-		if (Objects[ObjectIndex].PixelSize >= MinObjectSize)
-		{
-			++LargeObjectCount;
-		}
-	}
-	image_object* LargeObjects = (image_object*)AllocateOnStack(LargeObjectCount * SizeOf(image_object));
-	u32 LargeObjectIndex = 0;
-	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
-	{
-		if (Objects[ObjectIndex].PixelSize >= MinObjectSize)
-		{
-			LargeObjects[LargeObjectIndex++] = Objects[ObjectIndex];
-		}
-	}
-	FreeOnStack(Objects);
-
-	for (u32 ObjectIndex1 = 0; ObjectIndex1 < LargeObjectCount; ++ObjectIndex1)
-	{
-		for (u32 ObjectIndex2 = ObjectIndex1 + 1; ObjectIndex2 < LargeObjectCount; ++ObjectIndex2)
-		{
-			if (LargeObjects[ObjectIndex1].PixelSize < LargeObjects[ObjectIndex2].PixelSize)
-			{
-				image_object Temp = LargeObjects[ObjectIndex1];
-				LargeObjects[ObjectIndex1] = LargeObjects[ObjectIndex2];
-				LargeObjects[ObjectIndex2] = Temp;
-			}
-		}
-	}
-
-	u8* LabelValue = (u8*)AllocateOnStack(LabelCount + 1);
-	MemoryZero(LabelValue, LabelCount + 1);
-	for (u32 ObjectIndex = 0; ObjectIndex < MaxObjectCount; ++ObjectIndex)
-	{
-		LabelValue[LargeObjects[ObjectIndex].Label] = 255;
-	}
-	FreeOnStack(LargeObjects);
-
-	u32 ObjectsDeleted = LabelCount - MaxObjectCount;
-	if (ObjectsDeleted > 0)
-	{
-		for (i32 Row = 0; Row < Src->rows; ++Row)
-		{
-			for (i32 Col = 0; Col < Src->cols; ++Col)
-			{
-				point_i32 Point = PointI32(Row, Col);
-				i32 Label = GetAtI32(Labels, Point);
-				SetAtU8(Dst, Point, LabelValue[Label]);
-			}
-		}
-	}
 }
 
 image

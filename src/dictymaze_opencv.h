@@ -13,5 +13,11 @@ struct point_i32
 	i32 J;
 };
 
+struct image_object
+{
+	u32 Label;
+	u32 PixelSize;
+};
+
 #define DICTYMAZE_OPENCV_H
 #endif

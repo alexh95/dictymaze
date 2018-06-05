@@ -109,9 +109,7 @@ GoodFeaturesToTrack(
 	f64 MinDistance)
 {
 	cv::Mat CornersInternal;
-
 	cv::goodFeaturesToTrack(*Image, CornersInternal, MaxCorners, QualityLevel, MinDistance);
-
 	for (u32 CornerIndex = 0; CornerIndex < CornersInternal.rows; ++CornerIndex)
 	{
 		Corners[CornerIndex] = v2{CornersInternal.at<f32>(CornerIndex, 0), CornersInternal.at<f32>(CornerIndex, 1)};
@@ -227,13 +225,6 @@ ConnectedComponents(image* Src, image* Dst)
 	return Result;
 }
 
-inline void
-Laplacian(image* Src, image* Dst)
-{
-	Assert(Dst->data);
-	cv::Laplacian(*Src, *Dst, CV_8U, 3);
-}
-
 inline point_i32
 PointI32(i32 I, i32 J)
 {
@@ -257,4 +248,90 @@ operator+=(point_i32& A, point_i32 B)
 {
 	A = A + B;
 	return A;
+}
+
+inline void
+ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCount, u32 MinObjectSize, u32 MaxObjectCount)
+{
+	Assert(Dst->data);
+	// TODO(alex): prevent stack overflow
+	image_object* Objects = (image_object*)AllocateOnStack((LabelCount + 1) * SizeOf(image_object));
+	for (u32 Label = 0; Label <= LabelCount; ++Label)
+	{
+		Objects[Label].Label = Label;
+		Objects[Label].PixelSize = 0;
+	}
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = PointI32(Row, Col);
+			i32 Label = GetAtI32(Labels, Point);
+			if (Label > 0)
+			{
+				++Objects[Label].PixelSize;
+			}
+		}
+	}
+
+	u32 LargeObjectCount = 0;
+	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
+	{
+		if (Objects[ObjectIndex].PixelSize >= MinObjectSize)
+		{
+			++LargeObjectCount;
+		}
+	}
+	image_object* LargeObjects = (image_object*)AllocateOnStack(LargeObjectCount * SizeOf(image_object));
+	u32 LargeObjectIndex = 0;
+	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
+	{
+		if (Objects[ObjectIndex].PixelSize >= MinObjectSize)
+		{
+			LargeObjects[LargeObjectIndex++] = Objects[ObjectIndex];
+		}
+	}
+	FreeOnStack(Objects);
+
+	for (u32 ObjectIndex1 = 0; ObjectIndex1 < LargeObjectCount; ++ObjectIndex1)
+	{
+		for (u32 ObjectIndex2 = ObjectIndex1 + 1; ObjectIndex2 < LargeObjectCount; ++ObjectIndex2)
+		{
+			if (LargeObjects[ObjectIndex1].PixelSize < LargeObjects[ObjectIndex2].PixelSize)
+			{
+				image_object Temp = LargeObjects[ObjectIndex1];
+				LargeObjects[ObjectIndex1] = LargeObjects[ObjectIndex2];
+				LargeObjects[ObjectIndex2] = Temp;
+			}
+		}
+	}
+
+	u8* LabelValue = (u8*)AllocateOnStack(LabelCount + 1);
+	MemoryZero(LabelValue, LabelCount + 1);
+	for (u32 ObjectIndex = 0; ObjectIndex < MaxObjectCount; ++ObjectIndex)
+	{
+		LabelValue[LargeObjects[ObjectIndex].Label] = 255;
+	}
+	FreeOnStack(LargeObjects);
+
+	u32 ObjectsDeleted = LabelCount - MaxObjectCount;
+	if (ObjectsDeleted > 0)
+	{
+		for (i32 Row = 0; Row < Src->rows; ++Row)
+		{
+			for (i32 Col = 0; Col < Src->cols; ++Col)
+			{
+				point_i32 Point = PointI32(Row, Col);
+				i32 Label = GetAtI32(Labels, Point);
+				SetAtU8(Dst, Point, LabelValue[Label]);
+			}
+		}
+	}
+}
+
+inline void
+Laplacian(image* Src, image* Dst)
+{
+	Assert(Dst->data);
+	cv::Laplacian(*Src, *Dst, CV_8U, 3);
 }
