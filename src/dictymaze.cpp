@@ -211,6 +211,12 @@ Dictymaze()
 		image StabilizedImageEq = CloneImage(StabilizedImage);
 		EqualizeHistogram(&StabilizedImageEq, &StabilizedImageEq);
 
+		u32 Iterations = 2;
+		image DWImage = ImageF64(&StabilizedImageEq);
+		DWTImage(&StabilizedImageEq, &DWImage, Iterations);
+		image DWG = ImageU8(&DWImage);
+		DWImage.convertTo(DWG, CV_8UC1);
+
 		image Maze = ExtractMaze(&StabilizedImageEq);
 		image Difference = StabilizedImageEq - PrevStabilizedImageEq;
 

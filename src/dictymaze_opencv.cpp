@@ -51,6 +51,30 @@ SetAtI32(image* Image, point_i32 Point, i32 Value)
 	Image->at<i32>(Point.I, Point.J) = Value;
 }
 
+inline image
+ImageF64(u32 Rows, u32 Cols, f64 Value = 0.)
+{
+	return image(Rows, Cols, CV_64FC1, cv::Scalar(Value));
+}
+
+inline image
+ImageF64(image* Image, f64 Value = 0.)
+{
+	return ImageF64(Image->rows, Image->cols, Value);
+}
+
+inline f64
+GetAtF64(image* Image, point_i32 Point)
+{
+	return Image->at<f64>(Point.I, Point.J);
+}
+
+inline void
+SetAtF64(image* Image, point_i32 Point, f64 Value)
+{
+	Image->at<f64>(Point.I, Point.J) = Value;
+}
+
 inline void
 CopyImage(image* Dst, image* Src)
 {
@@ -334,4 +358,72 @@ Laplacian(image* Src, image* Dst)
 {
 	Assert(Dst->data);
 	cv::Laplacian(*Src, *Dst, CV_8U, 3);
+}
+
+inline void
+DWT(f64* Src, f64* Dst, u32 Length)
+{
+	u32 SrcLength = Length >> 1;
+	for (u32 Index = 0; Index < SrcLength; ++Index)
+	{
+		u32 SrcIndex = Index << 1;
+		Dst[Index] = (Src[SrcIndex] + Src[SrcIndex + 1]) * SQRT_2_DIV_2;
+		Dst[Index + SrcLength] = (Src[SrcIndex] - Src[SrcIndex + 1]) * SQRT_2_DIV_2;
+	}
+}
+
+void
+DWTImage(image* Src, image* Dst, u32 Iterations = 1)
+{
+	Assert(Iterations > 0)
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = { Row, Col };
+			u8 Value = GetAtU8(Src, Point);
+			SetAtF64(Dst, Point, (f64)Value);
+		}
+	}
+
+	for (i32 Iteration = Iterations - 1; Iteration >= 0; --Iteration)
+	{
+		i32 Level = 1 << Iteration;
+		i32 LevelRows = Dst->rows / Level;
+		i32 LevelCols = Dst->cols / Level;
+
+		f64* RowData = (f64*)AllocateOnStack(LevelCols * SizeOf(f64));
+		f64* DWTRowData = (f64*)AllocateOnStack(LevelCols * SizeOf(f64));
+		for (i32 Row = 0; Row < LevelRows; ++Row)
+		{
+			for (i32 Col = 0; Col < LevelCols; ++Col)
+			{
+				RowData[Col] = GetAtF64(Dst, { Row, Col });
+			}
+			DWT(RowData, DWTRowData, LevelCols);
+			for (i32 Col = 0; Col < LevelCols; ++Col)
+			{
+				SetAtF64(Dst, { Row, Col }, DWTRowData[Col]);
+			}
+		}
+		FreeOnStack(DWTRowData);
+		FreeOnStack(RowData);
+
+		f64* ColData = (f64*)AllocateOnStack(LevelRows * SizeOf(f64));
+		f64* DWTColData = (f64*)AllocateOnStack(LevelRows * SizeOf(f64));
+		for (i32 Col = 0; Col < LevelCols; ++Col)
+		{
+			for (i32 Row = 0; Row < LevelRows; ++Row)
+			{
+				ColData[Row] = GetAtF64(Dst, { Row, Col });
+			}
+			DWT(ColData, DWTColData, LevelRows);
+			for (i32 Row = 0; Row < LevelRows; ++Row)
+			{
+				SetAtF64(Dst, { Row, Col }, DWTColData[Row]);
+			}
+		}
+		FreeOnStack(ColData);
+		FreeOnStack(DWTColData);
+	}		
 }

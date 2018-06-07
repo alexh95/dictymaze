@@ -7,6 +7,8 @@
 
 typedef cv::Mat image;
 
+#define SQRT_2_DIV_2 0.70710678118654752440084436210485
+
 struct point_i32
 {
 	i32 I;
