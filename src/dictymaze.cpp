@@ -203,22 +203,21 @@ Dictymaze()
 	while (Running)
 	{
 		// image* Image = GetImage(&ImageSet, ImageIndex);
-		image* PrevStabilizedImage = GetImage(&StabilizedImageSet, PrevImageIndex(ImageIndex));
-		image PrevStabilizedImageEq = CloneImage(PrevStabilizedImage);
-		EqualizeHistogram(&PrevStabilizedImageEq, &PrevStabilizedImageEq);
-
+		image* StabilizedPrevImage = GetImage(&StabilizedImageSet, PrevImageIndex(ImageIndex));
+		image StabilizedPrevImageEq = CloneImage(StabilizedPrevImage);
+		EqualizeHistogram(&StabilizedPrevImageEq, &StabilizedPrevImageEq);
 		image* StabilizedImage = GetImage(&StabilizedImageSet, ImageIndex);
 		image StabilizedImageEq = CloneImage(StabilizedImage);
 		EqualizeHistogram(&StabilizedImageEq, &StabilizedImageEq);
 
-		u32 Iterations = 2;
-		image DWImage = ImageF64(&StabilizedImageEq);
-		DWTImage(&StabilizedImageEq, &DWImage, Iterations);
-		image DWG = ImageU8(&DWImage);
-		DWImage.convertTo(DWG, CV_8UC1);
+		u32 Iterations = 1;
+		image TransformImage = ImageU8(&StabilizedImageEq);
+		WaveletHaarTransform2D(&StabilizedImageEq, &TransformImage, Iterations);
+		image TransformPrevImage = ImageU8(&StabilizedPrevImageEq);
+		WaveletHaarTransform2D(&StabilizedPrevImageEq, &TransformPrevImage, Iterations);
 
 		image Maze = ExtractMaze(&StabilizedImageEq);
-		image Difference = StabilizedImageEq - PrevStabilizedImageEq;
+		image Difference = TransformImage - TransformPrevImage;
 
 		image IM = StabilizedImageEq & Maze;
 		image DM = Difference & Maze;

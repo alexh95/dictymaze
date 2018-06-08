@@ -361,7 +361,7 @@ Laplacian(image* Src, image* Dst)
 }
 
 inline void
-DWT(f64* Src, f64* Dst, u32 Length)
+WaveletHaarTransform1D(f64* Src, f64* Dst, u32 Length)
 {
 	u32 SrcLength = Length >> 1;
 	for (u32 Index = 0; Index < SrcLength; ++Index)
@@ -373,57 +373,79 @@ DWT(f64* Src, f64* Dst, u32 Length)
 }
 
 void
-DWTImage(image* Src, image* Dst, u32 Iterations = 1)
+WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 {
-	Assert(Iterations > 0)
+	Assert(Iterations > 0);
+
+	image Temp = ImageF64(Src);
 	for (i32 Row = 0; Row < Src->rows; ++Row)
 	{
 		for (i32 Col = 0; Col < Src->cols; ++Col)
 		{
 			point_i32 Point = { Row, Col };
 			u8 Value = GetAtU8(Src, Point);
-			SetAtF64(Dst, Point, (f64)Value);
+			f64 DstValue = (2. * (f64)Value) / 255. - 1.;
+			SetAtF64(&Temp, Point, DstValue);
 		}
 	}
 
-	for (i32 Iteration = Iterations - 1; Iteration >= 0; --Iteration)
+	for (i32 Iteration = 0; Iteration < Iterations; ++Iteration)
 	{
 		i32 Level = 1 << Iteration;
-		i32 LevelRows = Dst->rows / Level;
-		i32 LevelCols = Dst->cols / Level;
+		i32 LevelRows = Temp.rows / Level;
+		i32 LevelCols = Temp.cols / Level;
 
 		f64* RowData = (f64*)AllocateOnStack(LevelCols * SizeOf(f64));
-		f64* DWTRowData = (f64*)AllocateOnStack(LevelCols * SizeOf(f64));
+		f64* TransformRowData = (f64*)AllocateOnStack(LevelCols * SizeOf(f64));
 		for (i32 Row = 0; Row < LevelRows; ++Row)
 		{
 			for (i32 Col = 0; Col < LevelCols; ++Col)
 			{
-				RowData[Col] = GetAtF64(Dst, { Row, Col });
+				RowData[Col] = GetAtF64(&Temp, { Row, Col });
 			}
-			DWT(RowData, DWTRowData, LevelCols);
+			WaveletHaarTransform1D(RowData, TransformRowData, LevelCols);
 			for (i32 Col = 0; Col < LevelCols; ++Col)
 			{
-				SetAtF64(Dst, { Row, Col }, DWTRowData[Col]);
+				SetAtF64(&Temp, { Row, Col }, TransformRowData[Col]);
 			}
 		}
-		FreeOnStack(DWTRowData);
+		FreeOnStack(TransformRowData);
 		FreeOnStack(RowData);
 
 		f64* ColData = (f64*)AllocateOnStack(LevelRows * SizeOf(f64));
-		f64* DWTColData = (f64*)AllocateOnStack(LevelRows * SizeOf(f64));
+		f64* TransformColData = (f64*)AllocateOnStack(LevelRows * SizeOf(f64));
 		for (i32 Col = 0; Col < LevelCols; ++Col)
 		{
 			for (i32 Row = 0; Row < LevelRows; ++Row)
 			{
-				ColData[Row] = GetAtF64(Dst, { Row, Col });
+				ColData[Row] = GetAtF64(&Temp, { Row, Col });
 			}
-			DWT(ColData, DWTColData, LevelRows);
+			WaveletHaarTransform1D(ColData, TransformColData, LevelRows);
 			for (i32 Row = 0; Row < LevelRows; ++Row)
 			{
-				SetAtF64(Dst, { Row, Col }, DWTColData[Row]);
+				SetAtF64(&Temp, { Row, Col }, TransformColData[Row]);
 			}
 		}
 		FreeOnStack(ColData);
-		FreeOnStack(DWTColData);
-	}		
+		FreeOnStack(TransformColData);
+	}
+
+	for (i32 Row = 0; Row < Temp.rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Temp.cols; ++Col)
+		{
+			point_i32 Point = { Row, Col };
+			f64 Value = GetAtF64(&Temp, Point);
+			if (Value > 1.)
+			{
+				Value = 1.;
+			}
+			else if (Value < -1.)
+			{
+				Value = -1.;
+			}
+			u8 DstValue = (u8)((255. * (Value + 1.)) / 2.);
+			SetAtU8(Dst, Point, DstValue);
+		}
+	}
 }
