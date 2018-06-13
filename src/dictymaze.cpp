@@ -210,19 +210,11 @@ Dictymaze()
 		image StabilizedImageEq = CloneImage(StabilizedImage);
 		EqualizeHistogram(&StabilizedImageEq, &StabilizedImageEq);
 
-		u32 Iterations = 1;
-		image TransformImage = ImageU8(&StabilizedImageEq);
-		WaveletHaarTransform2D(&StabilizedImageEq, &TransformImage, Iterations);
-		image TransformPrevImage = ImageU8(&StabilizedPrevImageEq);
-		WaveletHaarTransform2D(&StabilizedPrevImageEq, &TransformPrevImage, Iterations);
-
 		image Maze = ExtractMaze(&StabilizedImageEq);
-		image Difference = TransformImage - TransformPrevImage;
+		image Difference = StabilizedImageEq - StabilizedPrevImageEq;
 
-		image IM = StabilizedImageEq & Maze;
+		ShowImage(OutputWindowName1, &Difference);
 		image DM = Difference & Maze;
-		ShowImage(OutputWindowName1, &DM);
-		DM = DM > 128;
 		ShowImage(OutputWindowName2, &DM);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);

@@ -360,6 +360,7 @@ Laplacian(image* Src, image* Dst)
 	cv::Laplacian(*Src, *Dst, CV_8U, 3);
 }
 
+#if 0
 inline void
 WaveletHaarTransform1D(f64* Src, f64* Dst, u32 Length)
 {
@@ -449,3 +450,4 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 		}
 	}
 }
+#endif
