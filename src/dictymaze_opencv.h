@@ -21,5 +21,10 @@ struct image_object
 	u32 PixelSize;
 };
 
+struct histogram
+{
+	u32 Data[256];
+};
+
 #define DICTYMAZE_OPENCV_H
 #endif

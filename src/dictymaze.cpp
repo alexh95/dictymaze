@@ -212,10 +212,15 @@ Dictymaze()
 
 		image Maze = ExtractMaze(&StabilizedImageEq);
 		image Difference = StabilizedImageEq - StabilizedPrevImageEq;
-
-		ShowImage(OutputWindowName1, &Difference);
 		image DM = Difference & Maze;
-		ShowImage(OutputWindowName2, &DM);
+
+		image DT = CloneImage(&Difference);
+		ThresholdTop(&DT, &DT, 0.001);
+		ShowImage(OutputWindowName1, &DT);
+
+		image DTM = CloneImage(&DM);
+		ThresholdTop(&DTM, &DTM, 0.001);
+		ShowImage(OutputWindowName2, &DTM);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)

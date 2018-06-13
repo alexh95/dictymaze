@@ -451,3 +451,44 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 	}
 }
 #endif
+
+histogram
+CalculateHistogram(image* Src)
+{
+	histogram Result = {};
+
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			u8 Value = GetAtU8(Src, {Row, Col});
+			++Result.Data[Value];
+		}
+	}
+
+	return Result;
+}
+
+void
+ThresholdTop(image* Src, image* Dst, f64 Ratio)
+{
+	histogram Histogram = CalculateHistogram(Src);
+	u32 ImageSize = Src->rows * Src->cols;
+	i32 TargetSize = (i32)((f64)ImageSize * Ratio);
+	u32 LastValue = 255;
+	while (TargetSize > 0)
+	{
+		TargetSize -= Histogram.Data[LastValue--];
+	}
+
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = {Row, Col};
+			u8 Value = GetAtU8(Src, Point);
+			u8 NewValue = (Value >= LastValue) ? Value : 0;
+			SetAtU8(Dst, Point, NewValue);
+		}
+	}
+}
