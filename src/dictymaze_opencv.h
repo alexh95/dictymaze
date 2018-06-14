@@ -11,8 +11,19 @@ typedef cv::Mat image;
 
 struct point_i32
 {
-	i32 I;
-	i32 J;
+	union
+	{
+		struct
+		{
+			i32 J;
+			i32 I;
+		};
+		struct
+		{
+			i32 X;
+			i32 Y;
+		};
+	};
 };
 
 struct image_object

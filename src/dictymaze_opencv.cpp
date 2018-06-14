@@ -88,9 +88,15 @@ CloneImage(image* Image)
 }
 
 inline void
-CreateNamedWindow(char* WindowName)
+CreateWindow(char* WindowName)
 {
 	cv::namedWindow(WindowName, cv::WINDOW_AUTOSIZE);
+}
+
+inline void
+DestroyWindow(char* WindowName)
+{
+	cv::destroyWindow(WindowName);
 }
 
 inline image
@@ -238,7 +244,7 @@ inline void
 AdaptiveThreshold(image* Src, image* Dst)
 {
 	Assert(Dst->data);
-	cv::adaptiveThreshold(*Src, *Dst, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 5, 0);
+	cv::adaptiveThreshold(*Src, *Dst, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 5, 0);
 }
 
 inline u32
@@ -491,4 +497,15 @@ ThresholdTop(image* Src, image* Dst, f64 Ratio)
 			SetAtU8(Dst, Point, NewValue);
 		}
 	}
+}
+
+void
+FillConvexPoly(image* Src, point_i32* Points, u32 PointCount, u8 Color)
+{
+	cv::fillConvexPoly(*Src, (cv::Point*)Points, PointCount, cv::Scalar(Color));
+}
+
+void AbsoluteDifference(image* Src1, image* Src2, image* Out)
+{
+	cv::absdiff(*Src1, *Src2, *Out);
 }
