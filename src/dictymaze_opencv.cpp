@@ -76,7 +76,7 @@ SetAtF64(image* Image, point_i32 Point, f64 Value)
 }
 
 inline void
-CopyImage(image* Dst, image* Src)
+CopyImage(image* Src, image* Dst)
 {
 	Src->copyTo(*Dst);
 }
@@ -108,6 +108,7 @@ ReadGrayscaleImage(char* ImageName)
 inline void
 WriteImage(char* ImageName, image* Image)
 {
+	Assert(Image->data);
 	cv::imwrite(ImageName, *Image);
 }
 
@@ -295,7 +296,7 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 	{
 		for (i32 Col = 0; Col < Src->cols; ++Col)
 		{
-			point_i32 Point = PointI32(Row, Col);
+			point_i32 Point = PointI32(Col, Row);
 			i32 Label = GetAtI32(Labels, Point);
 			if (Label > 0)
 			{
@@ -351,7 +352,7 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 		{
 			for (i32 Col = 0; Col < Src->cols; ++Col)
 			{
-				point_i32 Point = PointI32(Row, Col);
+				point_i32 Point = PointI32(Col, Row);
 				i32 Label = GetAtI32(Labels, Point);
 				SetAtU8(Dst, Point, LabelValue[Label]);
 			}
@@ -389,7 +390,7 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 	{
 		for (i32 Col = 0; Col < Src->cols; ++Col)
 		{
-			point_i32 Point = { Row, Col };
+			point_i32 Point = { Col, Row };
 			u8 Value = GetAtU8(Src, Point);
 			f64 DstValue = (2. * (f64)Value) / 255. - 1.;
 			SetAtF64(&Temp, Point, DstValue);
@@ -408,12 +409,12 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 		{
 			for (i32 Col = 0; Col < LevelCols; ++Col)
 			{
-				RowData[Col] = GetAtF64(&Temp, { Row, Col });
+				RowData[Col] = GetAtF64(&Temp, { Col, Row });
 			}
 			WaveletHaarTransform1D(RowData, TransformRowData, LevelCols);
 			for (i32 Col = 0; Col < LevelCols; ++Col)
 			{
-				SetAtF64(&Temp, { Row, Col }, TransformRowData[Col]);
+				SetAtF64(&Temp, { Col, Row }, TransformRowData[Col]);
 			}
 		}
 		FreeOnStack(TransformRowData);
@@ -425,12 +426,12 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 		{
 			for (i32 Row = 0; Row < LevelRows; ++Row)
 			{
-				ColData[Row] = GetAtF64(&Temp, { Row, Col });
+				ColData[Row] = GetAtF64(&Temp, { Col, Row });
 			}
 			WaveletHaarTransform1D(ColData, TransformColData, LevelRows);
 			for (i32 Row = 0; Row < LevelRows; ++Row)
 			{
-				SetAtF64(&Temp, { Row, Col }, TransformColData[Row]);
+				SetAtF64(&Temp, { Col, Row }, TransformColData[Row]);
 			}
 		}
 		FreeOnStack(ColData);
@@ -441,7 +442,7 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 	{
 		for (i32 Col = 0; Col < Temp.cols; ++Col)
 		{
-			point_i32 Point = { Row, Col };
+			point_i32 Point = { Col, Row };
 			f64 Value = GetAtF64(&Temp, Point);
 			if (Value > 1.)
 			{
@@ -467,7 +468,7 @@ CalculateHistogram(image* Src)
 	{
 		for (i32 Col = 0; Col < Src->cols; ++Col)
 		{
-			u8 Value = GetAtU8(Src, {Row, Col});
+			u8 Value = GetAtU8(Src, {Col, Row});
 			++Result.Data[Value];
 		}
 	}
@@ -476,10 +477,14 @@ CalculateHistogram(image* Src)
 }
 
 void
-ThresholdTop(image* Src, image* Dst, f64 Ratio)
+ThresholdTop(image* Src, image* Dst, f64 Ratio, b32 IgnoreZero = true)
 {
 	histogram Histogram = CalculateHistogram(Src);
 	u32 ImageSize = Src->rows * Src->cols;
+	if (IgnoreZero)
+	{
+		ImageSize -= Histogram.Data[0];
+	}
 	i32 TargetSize = (i32)((f64)ImageSize * Ratio);
 	u32 LastValue = 255;
 	while (TargetSize > 0)
@@ -491,7 +496,7 @@ ThresholdTop(image* Src, image* Dst, f64 Ratio)
 	{
 		for (i32 Col = 0; Col < Src->cols; ++Col)
 		{
-			point_i32 Point = {Row, Col};
+			point_i32 Point = {Col, Row};
 			u8 Value = GetAtU8(Src, Point);
 			u8 NewValue = (Value >= LastValue) ? Value : 0;
 			SetAtU8(Dst, Point, NewValue);
@@ -505,7 +510,50 @@ FillConvexPoly(image* Src, point_i32* Points, u32 PointCount, u8 Color)
 	cv::fillConvexPoly(*Src, (cv::Point*)Points, PointCount, cv::Scalar(Color));
 }
 
-void AbsoluteDifference(image* Src1, image* Src2, image* Out)
+void
+AbsoluteDifference(image* Src1, image* Src2, image* Out)
 {
 	cv::absdiff(*Src1, *Src2, *Out);
+}
+
+void
+MaxImageF64(image* Src1, image* Src2, image* Dst)
+{
+	Assert(Src1->data && Src2->data && Dst->data);
+	Assert(Src1->rows == Src2->rows && Src1->cols == Src2->cols);
+	Assert(Src1->rows == Dst->rows && Src1->cols == Dst->cols);
+	for (i32 Row = 0; Row < Src1->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src1->cols; ++Col)
+		{
+			point_i32 Point = {Col, Row};
+			f64 Value1 = GetAtF64(Src1, Point);
+			f64 Value2 = GetAtF64(Src2, Point);
+			f64 Result = MAX(Value1, Value2);
+			SetAtF64(Dst, Point, Result);
+		}
+	}
+}
+
+void
+GetGaborKernel(image* Dst, point_i32 KernelSize, f64 Sigma, f64 Theta, f64 Lambda, f64 Gamma, f64 Psi, i32 KernelType = CV_64F)
+{
+	Assert(Dst->data);
+	image Kernel = cv::getGaborKernel({KernelSize.I, KernelSize.J}, Sigma, Theta, Lambda, Gamma, Psi, KernelType);
+	CopyImage(&Kernel, Dst);
+}
+
+void
+DifferenceCellFilter(image* Src, image* Dst)
+{
+	Assert(Dst->data);
+	image Kernel1 = ImageF64(31, 31);
+	image Kernel2 = ImageF64(31, 31);
+	GetGaborKernel(&Kernel1, {31, 31}, 8., 0., 1., 4., 0.);
+	GetGaborKernel(&Kernel2, {31, 31}, 8., PI * 0.5, 1., 4., 0.);
+	image Kernel = ImageF64(31, 31);
+	MaxImageF64(&Kernel1, &Kernel2, &Kernel);
+
+	// TODO(alex): repl with own convolution
+	cv::filter2D(*Src, *Dst, CV_64F, Kernel);
 }

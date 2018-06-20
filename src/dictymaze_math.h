@@ -1,5 +1,7 @@
 #if !defined(DICTYMAZE_MATH_H)
 
+#define PI 3.14159265358979
+
 struct v2
 {
 	union

@@ -92,22 +92,17 @@ StabilizeImages(image_set* DstImageSet, image_set* SrcImageSet)
 {
 	char OutputWindowName[] = "Image Stabilization";
 	CreateWindow(OutputWindowName);
-	image StabilizationDisplay = ImageU8(60, 200);
+	image StabilizationDisplay = ImageU8(480, 640);
+	cv::putText(StabilizationDisplay, "Stabilizing images", {220, 240}, cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(255));
+	ShowImage(OutputWindowName, &StabilizationDisplay);
+	WaitKey(1);
 
 	image* PrevImage = GetImage(SrcImageSet, 0);
 	image PrevImageEq = ImageU8(PrevImage);
 	EqualizeHistogram(PrevImage, &PrevImageEq);
 	v3 Trajectory = {};
-	for (u32 ImageIndex = 1; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
+	for (u32 ImageIndex = 0; ImageIndex < IMAGE_SET_SIZE; ++ImageIndex)
 	{
-		cv::rectangle(StabilizationDisplay, {0, 0}, {200, 60}, cv::Scalar(0), CV_FILLED);
-		cv::putText(StabilizationDisplay, "Stabilizing", {0, 20}, cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(255));
-		char ProgressMessage[256] = {};
-		sprintf(ProgressMessage, "%4d / %4d", ImageIndex, IMAGE_SET_SIZE);
-		cv::putText(StabilizationDisplay, ProgressMessage, {0, 40}, cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(255));
-		ShowImage(OutputWindowName, &StabilizationDisplay);
-		WaitKey(1);
-
 		image* NextImage = GetImage(SrcImageSet, ImageIndex);
 		image NextImageEq = ImageU8(NextImage);
 		EqualizeHistogram(NextImage, &NextImageEq);
@@ -115,7 +110,7 @@ StabilizeImages(image_set* DstImageSet, image_set* SrcImageSet)
 		v2 PrevCorners[MAX_CORNERS] = {};
 		v2 NextCorners[MAX_CORNERS] = {};
 		u32 FilteredCornerCount = 0;
-		GoodFeaturesToTrack(&NextImageEq, PrevCorners, MAX_CORNERS, 0.1, 5);
+		GoodFeaturesToTrack(&NextImageEq, PrevCorners, MAX_CORNERS, 0.005, 10);
 		CalculateOpticalFlowPiramidsLucasKanade(&PrevImageEq, &NextImageEq, PrevCorners, NextCorners, MAX_CORNERS, &FilteredCornerCount);
 		v3 Transform = EstimateRigidTransform(PrevCorners, NextCorners, FilteredCornerCount, false);
 		Trajectory += Transform;
@@ -124,6 +119,11 @@ StabilizeImages(image_set* DstImageSet, image_set* SrcImageSet)
 
 		PrevImageEq = NextImageEq;
 	}
+
+	cv::rectangle(StabilizationDisplay, {0, 0}, {640, 480}, cv::Scalar(0), CV_FILLED);
+	cv::putText(StabilizationDisplay, "Saving images", {220, 240}, cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(255));
+	ShowImage(OutputWindowName, &StabilizationDisplay);
+	WaitKey(1);
 
 	SaveImageSet(DstImageSet);
 	DestroyWindow(OutputWindowName);
@@ -212,7 +212,7 @@ Dictymaze()
 	b32 Running = true;
 	b32 Paused = true;
 	u32 FrameTime = 33;
-	u32 ImageIndex = 1;
+	u32 ImageIndex = 101;
 	while (Running)
 	{
 		// image* Image = GetImage(&ImageSet, ImageIndex);
@@ -223,10 +223,11 @@ Dictymaze()
 		image StabilizedImageEq = CloneImage(StabilizedImage);
 		EqualizeHistogram(&StabilizedImageEq, &StabilizedImageEq);
 
-		//image Maze = ExtractMaze(&StabilizedImageEq);
+		image Maze = ExtractMaze(&StabilizedImageEq);
 		image AreaOfInterestMask = ImageU8(StabilizedImage);
 		point_i32 AreaOfInterest[4] = {{82, 22}, {72, 335}, {930, 343}, {940, 47}};
 		FillConvexPoly(&AreaOfInterestMask, AreaOfInterest, ArrayCount(AreaOfInterest), 255);
+		AreaOfInterestMask = AreaOfInterestMask & Maze;
 
 		image Difference = ImageU8(StabilizedImage);
 		AbsoluteDifference(&StabilizedImageEq, &StabilizedPrevImageEq, &Difference);
@@ -234,8 +235,11 @@ Dictymaze()
 
 		ShowImage(OutputWindowName1, &Difference);
 
-		Difference = Difference > 90;
+		ThresholdTop(&Difference, &Difference, 0.0075);
 		ShowImage(OutputWindowName2, &Difference);
+
+		image Cells = ImageF64(&Difference);
+		DifferenceCellFilter(&Difference, &Cells);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)
