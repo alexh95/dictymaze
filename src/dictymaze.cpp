@@ -212,7 +212,7 @@ Dictymaze()
 	b32 Running = true;
 	b32 Paused = true;
 	u32 FrameTime = 33;
-	u32 ImageIndex = 101;
+	u32 ImageIndex = 501;
 	while (Running)
 	{
 		// image* Image = GetImage(&ImageSet, ImageIndex);
@@ -233,13 +233,51 @@ Dictymaze()
 		AbsoluteDifference(&StabilizedImageEq, &StabilizedPrevImageEq, &Difference);
 		Difference = Difference & AreaOfInterestMask;
 
-		ShowImage(OutputWindowName1, &Difference);
 
-		ThresholdTop(&Difference, &Difference, 0.0075);
-		ShowImage(OutputWindowName2, &Difference);
-
-		image Cells = ImageF64(&Difference);
+		image Cells = ImageU8(&Difference);
 		DifferenceCellFilter(&Difference, &Cells);
+		ShowImage(OutputWindowName1, &Cells);
+
+		histogram CellsHist = CalculateHistogram(&Cells);
+		image CellsHistDisplay = ImageU8(1000, 256 * 4);
+		HistogramDraw(&CellsHistDisplay, &CellsHist, 8);
+		ShowImage("Cells Histogram", &CellsHistDisplay);
+
+		i32 CellsHistGradient[256] = {};
+		i32 MinGradient = 0;
+		for (u32 Index = 1; Index < ArrayCount(CellsHist.Data); ++Index)
+		{
+			u32 PrevValue = CellsHist.Data[Index - 1];
+			u32 Value = CellsHist.Data[Index];
+			i32 Gradient = (i32)Value - (i32)PrevValue;
+			if (Gradient < MinGradient)
+			{
+				MinGradient = Gradient;
+			}
+			CellsHistGradient[Index] = Gradient;
+		}
+
+		u32 Threshold = 0;
+		for (u32 Index = 0; Index < ArrayCount(CellsHistGradient); ++Index)
+		{
+			i32 Gradient = CellsHistGradient[Index];
+			if (Abs(Gradient) >= 20)
+			{
+				Threshold = Index;
+			}
+		}
+
+		for (u32 Index = 1; Index < ArrayCount(CellsHistGradient); ++Index)
+		{
+			CellsHistGradient[Index] -= MinGradient;
+		}
+		image CellsHistGradientDisplay = ImageU8(1000, 256 * 4);
+		HistogramDraw(&CellsHistGradientDisplay, &CellsHist);
+		ShowImage("Cells Histogram Gradient", &CellsHistGradientDisplay);
+		
+		// ThresholdTop(&Cells, &Cells, 0.0075, true);
+		cv::threshold(Cells, Cells, Threshold, 255, cv::THRESH_TOZERO);
+		ShowImage(OutputWindowName2, &Cells);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)

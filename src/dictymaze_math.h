@@ -2,6 +2,8 @@
 
 #define PI 3.14159265358979
 
+#define Abs(Value) ((Value) > 0 ? Value : -Value)
+
 struct v2
 {
 	union

@@ -477,7 +477,7 @@ CalculateHistogram(image* Src)
 }
 
 void
-ThresholdTop(image* Src, image* Dst, f64 Ratio, b32 IgnoreZero = true)
+ThresholdTop(image* Src, image* Dst, f64 Ratio, b32 IgnoreZero = false)
 {
 	histogram Histogram = CalculateHistogram(Src);
 	u32 ImageSize = Src->rows * Src->cols;
@@ -544,16 +544,166 @@ GetGaborKernel(image* Dst, point_i32 KernelSize, f64 Sigma, f64 Theta, f64 Lambd
 }
 
 void
+ApplyConvolutionU8F64(image* Src, image* Dst, image* Kernel)
+{
+	Assert(Src->data && Dst->data && Kernel->data);
+	Assert(Src->rows == Dst->rows && Src->cols == Dst->cols);
+
+	i32 KernelRadiusV = Kernel->rows >> 1;
+	i32 KernelRadiusH = Kernel->cols >> 1;
+	point_i32 KernelRadius = {KernelRadiusH, KernelRadiusV};
+
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = {Col, Row};
+			f64 Result = 0.;
+
+			for (i32 KRow = -KernelRadiusV; KRow <= KernelRadiusV; ++KRow)
+			{
+				for (i32 KCol = -KernelRadiusH; KCol <= KernelRadiusH; ++KCol)
+				{
+					point_i32 DPoint = {KCol, KRow};
+					point_i32 SrcPoint = Point + DPoint;
+					point_i32 KPoint = KernelRadius + DPoint;
+					if (SrcPoint.I >= 0 && SrcPoint.I < Src->rows && SrcPoint.J >= 0 && SrcPoint.J < Src->cols)
+					{
+						u8 Value = GetAtU8(Src, SrcPoint);
+						f64 KValue = GetAtF64(Kernel, KPoint);
+						Result += (f64)Value * KValue;
+					}
+				}
+			}
+
+			SetAtF64(Dst, Point, Result);
+		}
+	}
+}
+
+inline f64
+MapMinMax(f64 Value, f64 FromMin, f64 FromMax, f64 ToMin, f64 ToMax)
+{
+	f64 Result = ToMin + ((Value - FromMin) / (FromMax - FromMin)) * (ToMax - ToMin);
+	return Result;
+}
+
+void
+NormalizeMatF64(image* Src, image* Dst)
+{
+	Assert(Src->data && Dst->data);
+	Assert(Src->rows == Dst->rows && Src->cols == Src->cols);
+
+	f64 Min = 0.;
+	f64 Max = 0.;
+	cv::minMaxLoc(*Src, &Min, &Max);
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = {Col, Row};
+			f64 Value = GetAtF64(Src, Point);
+			f64 MappedValue = MapMinMax(Value, Min, Max, 0., 1.);
+			SetAtF64(Dst, Point, MappedValue);
+		}
+	}
+}
+
+f64
+MeanF64(image* Src, b32 IncludeZero = true, f64 Epsilon = 0.0001)
+{
+	Assert(Src->data);
+	f64 Result = 0.;
+	f64 Sum = 0.;
+	i32 Count = 0;
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = {Col, Row};
+			f64 Value = GetAtF64(Src, Point);
+			if (IncludeZero || Abs(Value) >= Epsilon)
+			{
+				Sum += Value;
+				++Count;
+			}
+		}
+	}
+	if (Count > 0)
+	{
+		Result = Sum / (f64)Count;
+	}
+	return Result;
+}
+
+void
+F64ToU8(image* Src, image* Dst)
+{
+	Assert(Src->data && Dst->data);
+	Assert(Src->rows == Dst->rows && Src->cols == Dst->cols);
+
+	for (i32 Row = 0; Row < Src->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Src->cols; ++Col)
+		{
+			point_i32 Point = {Col, Row};
+			f64 Value = GetAtF64(Src, Point);
+			u8 NewValue = (u8)MapMinMax(Value, 0., 1., 0., 255.);
+			SetAtU8(Dst, Point, NewValue);
+		}
+	}
+}
+
+void
 DifferenceCellFilter(image* Src, image* Dst)
 {
-	Assert(Dst->data);
+	Assert(Src->data && Dst->data);
+	Assert(Src->rows == Dst->rows && Src->cols == Dst->cols);
+
+	image Filtered = ImageF64(Dst);
+
 	image Kernel1 = ImageF64(31, 31);
 	image Kernel2 = ImageF64(31, 31);
 	GetGaborKernel(&Kernel1, {31, 31}, 8., 0., 1., 4., 0.);
 	GetGaborKernel(&Kernel2, {31, 31}, 8., PI * 0.5, 1., 4., 0.);
 	image Kernel = ImageF64(31, 31);
 	MaxImageF64(&Kernel1, &Kernel2, &Kernel);
+	// ApplyConvolutionU8F64(Src, Dst, &Kernel);
+	cv::filter2D(*Src, Filtered, CV_64F, Kernel, {-1, -1}, 0., cv::BORDER_CONSTANT);
+	NormalizeMatF64(&Filtered, &Filtered);
+	F64ToU8(&Filtered, Dst);
+}
 
-	// TODO(alex): repl with own convolution
-	cv::filter2D(*Src, *Dst, CV_64F, Kernel);
+void
+HistogramDraw(image* Dst, histogram* Histogram, u32 From = 0, u32 To = 256)
+{
+	Assert(Dst->data);
+	Assert(To - From > 0);
+
+	u32 Min = Histogram->Data[From];
+	u32 Max = Histogram->Data[From];
+	for (u32 Index = From + 1; Index < To; ++Index)
+	{
+		u32 Value = Histogram->Data[Index];
+		if (Value < Min)
+		{
+			Min = Value;
+		}
+		if (Value > Max)
+		{
+			Max = Value;
+		}
+	}
+
+	u32 BarWidth = Dst->cols / ArrayCount(Histogram->Data);
+
+	for (u32 Index = From; Index < To; ++Index)
+	{
+		u32 Value = Histogram->Data[Index];
+		u32 BarHeight = (u32)MapMinMax(Value, Min, Max, 0, Dst->rows);
+
+		cv::Point Point1 = {(i32)(Index * BarWidth), (i32)(Dst->rows - BarHeight)};
+		cv::Point Point2 = {(i32)((Index + 1) * BarWidth), (i32)(Dst->rows)};
+		cv::rectangle(*Dst, Point1, Point2, cv::Scalar(255), CV_FILLED);
+	}
 }
