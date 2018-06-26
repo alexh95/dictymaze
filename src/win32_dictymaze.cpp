@@ -8,11 +8,17 @@
 void*
 AllocateOnStack(size Size)
 {
+    return _alloca(Size);
+}
+
+void*
+AllocateOnStackSafe(size Size)
+{
 	return _malloca(Size);
 }
 
 void
-FreeOnStack(void* Buffer)
+FreeOnStackSafe(void* Buffer)
 {
 	_freea(Buffer);
 }

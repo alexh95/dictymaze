@@ -27,6 +27,33 @@ SetAtU8(image* Image, point_i32 Point, u8 Value)
 }
 
 inline image
+ImageU8C3(u32 Rows, u32 Cols, pixel_rgb Value = {})
+{
+	return image(Rows, Cols, CV_8UC3, cv::Scalar(Value.E[2], Value.E[1], Value.E[0]));
+}
+
+inline image
+ImageU8C3(image* Image, pixel_rgb Value = {})
+{
+	return ImageU8C3(Image->rows, Image->cols, Value);
+}
+
+inline pixel_rgb
+GetAtU8C3(image* Image, point_i32 Point)
+{
+	cv::Vec3b Value = Image->at<cv::Vec3b>(Point.I, Point.J);
+	pixel_rgb Result = {Value[2], Value[1], Value[0]};
+	return Result;
+}
+
+inline void
+SetAtU8C3(image* Image, point_i32 Point, pixel_rgb Value)
+{
+	cv::Vec3b Pixel = {Value.B, Value.G, Value.R};
+	Image->at<cv::Vec3b>(Point.I, Point.J) = Pixel;
+}
+
+inline image
 ImageI32(u32 Rows, u32 Cols, i32 Value = 0)
 {
 	return image(Rows, Cols, CV_32SC1, cv::Scalar(Value));
@@ -284,13 +311,13 @@ operator+=(point_i32& A, point_i32 B)
 inline void
 ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCount, u32 MinObjectSize, u32 MaxObjectCount)
 {
-	Assert(Dst->data);
+	Assert(Src->data && Dst->data);
 	// TODO(alex): prevent stack overflow
-	image_object* Objects = (image_object*)AllocateOnStack((LabelCount + 1) * SizeOf(image_object));
+	image_object* Objects = (image_object*)AllocateOnStackSafe((LabelCount + 1) * SizeOf(image_object));
 	for (u32 Label = 0; Label <= LabelCount; ++Label)
 	{
 		Objects[Label].Label = Label;
-		Objects[Label].PixelSize = 0;
+		Objects[Label].Size = 0;
 	}
 	for (i32 Row = 0; Row < Src->rows; ++Row)
 	{
@@ -300,7 +327,7 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 			i32 Label = GetAtI32(Labels, Point);
 			if (Label > 0)
 			{
-				++Objects[Label].PixelSize;
+				++Objects[Label].Size;
 			}
 		}
 	}
@@ -308,27 +335,27 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 	u32 LargeObjectCount = 0;
 	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
 	{
-		if (Objects[ObjectIndex].PixelSize >= MinObjectSize)
+		if (Objects[ObjectIndex].Size >= MinObjectSize)
 		{
 			++LargeObjectCount;
 		}
 	}
-	image_object* LargeObjects = (image_object*)AllocateOnStack(LargeObjectCount * SizeOf(image_object));
+	image_object* LargeObjects = (image_object*)AllocateOnStackSafe(LargeObjectCount * SizeOf(image_object));
 	u32 LargeObjectIndex = 0;
 	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
 	{
-		if (Objects[ObjectIndex].PixelSize >= MinObjectSize)
+		if (Objects[ObjectIndex].Size >= MinObjectSize)
 		{
 			LargeObjects[LargeObjectIndex++] = Objects[ObjectIndex];
 		}
 	}
-	FreeOnStack(Objects);
+	FreeOnStackSafe(Objects);
 
 	for (u32 ObjectIndex1 = 0; ObjectIndex1 < LargeObjectCount; ++ObjectIndex1)
 	{
 		for (u32 ObjectIndex2 = ObjectIndex1 + 1; ObjectIndex2 < LargeObjectCount; ++ObjectIndex2)
 		{
-			if (LargeObjects[ObjectIndex1].PixelSize < LargeObjects[ObjectIndex2].PixelSize)
+			if (LargeObjects[ObjectIndex1].Size < LargeObjects[ObjectIndex2].Size)
 			{
 				image_object Temp = LargeObjects[ObjectIndex1];
 				LargeObjects[ObjectIndex1] = LargeObjects[ObjectIndex2];
@@ -337,13 +364,13 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 		}
 	}
 
-	u8* LabelValue = (u8*)AllocateOnStack(LabelCount + 1);
+	u8* LabelValue = (u8*)AllocateOnStackSafe(LabelCount + 1);
 	MemoryZero(LabelValue, LabelCount + 1);
 	for (u32 ObjectIndex = 0; ObjectIndex < MaxObjectCount; ++ObjectIndex)
 	{
 		LabelValue[LargeObjects[ObjectIndex].Label] = 255;
 	}
-	FreeOnStack(LargeObjects);
+	FreeOnStackSafe(LargeObjects);
 
 	u32 ObjectsDeleted = LabelCount - MaxObjectCount;
 	if (ObjectsDeleted > 0)
@@ -403,8 +430,8 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 		i32 LevelRows = Temp.rows / Level;
 		i32 LevelCols = Temp.cols / Level;
 
-		f64* RowData = (f64*)AllocateOnStack(LevelCols * SizeOf(f64));
-		f64* TransformRowData = (f64*)AllocateOnStack(LevelCols * SizeOf(f64));
+		f64* RowData = (f64*)AllocateOnStackSafe(LevelCols * SizeOf(f64));
+		f64* TransformRowData = (f64*)AllocateOnStackSafe(LevelCols * SizeOf(f64));
 		for (i32 Row = 0; Row < LevelRows; ++Row)
 		{
 			for (i32 Col = 0; Col < LevelCols; ++Col)
@@ -417,11 +444,11 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 				SetAtF64(&Temp, { Col, Row }, TransformRowData[Col]);
 			}
 		}
-		FreeOnStack(TransformRowData);
-		FreeOnStack(RowData);
+		FreeOnStackSafe(TransformRowData);
+		FreeOnStackSafe(RowData);
 
-		f64* ColData = (f64*)AllocateOnStack(LevelRows * SizeOf(f64));
-		f64* TransformColData = (f64*)AllocateOnStack(LevelRows * SizeOf(f64));
+		f64* ColData = (f64*)AllocateOnStackSafe(LevelRows * SizeOf(f64));
+		f64* TransformColData = (f64*)AllocateOnStackSafe(LevelRows * SizeOf(f64));
 		for (i32 Col = 0; Col < LevelCols; ++Col)
 		{
 			for (i32 Row = 0; Row < LevelRows; ++Row)
@@ -434,8 +461,8 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 				SetAtF64(&Temp, { Col, Row }, TransformColData[Row]);
 			}
 		}
-		FreeOnStack(ColData);
-		FreeOnStack(TransformColData);
+		FreeOnStackSafe(ColData);
+		FreeOnStackSafe(TransformColData);
 	}
 
 	for (i32 Row = 0; Row < Temp.rows; ++Row)
@@ -666,6 +693,7 @@ DifferenceCellFilter(image* Src, image* Dst)
 	image Kernel2 = ImageF64(31, 31);
 	GetGaborKernel(&Kernel1, {31, 31}, 8., 0., 1., 4., 0.);
 	GetGaborKernel(&Kernel2, {31, 31}, 8., PI * 0.5, 1., 4., 0.);
+
 	image Kernel = ImageF64(31, 31);
 	MaxImageF64(&Kernel1, &Kernel2, &Kernel);
 	// ApplyConvolutionU8F64(Src, Dst, &Kernel);
@@ -696,6 +724,13 @@ HistogramDraw(image* Dst, histogram* Histogram, u32 From = 0, u32 To = 256)
 	}
 
 	u32 BarWidth = Dst->cols / ArrayCount(Histogram->Data);
+	u32 BarWidthOffset = 0;
+	if (BarWidth > 1)
+	{
+		BarWidthOffset = BarWidth / 2;
+	}
+
+	cv::rectangle(*Dst, {0, 0}, {Dst->cols, Dst->rows}, cv::Scalar(0), CV_FILLED);
 
 	for (u32 Index = From; Index < To; ++Index)
 	{
@@ -703,7 +738,7 @@ HistogramDraw(image* Dst, histogram* Histogram, u32 From = 0, u32 To = 256)
 		u32 BarHeight = (u32)MapMinMax(Value, Min, Max, 0, Dst->rows);
 
 		cv::Point Point1 = {(i32)(Index * BarWidth), (i32)(Dst->rows - BarHeight)};
-		cv::Point Point2 = {(i32)((Index + 1) * BarWidth), (i32)(Dst->rows)};
+		cv::Point Point2 = {(i32)((Index + 1) * BarWidth - BarWidthOffset), (i32)(Dst->rows)};
 		cv::rectangle(*Dst, Point1, Point2, cv::Scalar(255), CV_FILLED);
 	}
 }

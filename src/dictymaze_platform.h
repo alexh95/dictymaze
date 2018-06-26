@@ -30,8 +30,11 @@ typedef size_t size;
 void*
 AllocateOnStack(size Size);
 
+void*
+AllocateOnStackSafe(size Size);
+
 void
-FreeOnStack(void* Buffer);
+FreeOnStackSafe(void* Buffer);
 
 void
 MemoryZero(void* Buffer, size Length);

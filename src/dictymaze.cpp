@@ -173,22 +173,20 @@ PointInBounds(image* Image, point_i32 Point)
 	return Result;
 }
 
-image
-ExtractMaze(image* Image)
+void
+ExtractMaze(image* Src, image* Maze)
 {
-	image Maze = CloneImage(Image);
-	EqualizeHistogram(&Maze, &Maze);
-	Laplacian(&Maze, &Maze);
-	MorphOpen(&Maze, &Maze, 3);
-	AdaptiveThreshold(&Maze, &Maze);
-	MorphClose(&Maze, &Maze, 3);
-	MorphOpen(&Maze, &Maze, 3);
-	image MazeLabels = ImageI32(&Maze);
-	u32 LabelCount = ConnectedComponents(&Maze, &MazeLabels);
-	ExtractLargestLabeledFeatures(&Maze, &Maze, &MazeLabels, LabelCount, 15, 30);
-	MorphClose(&Maze, &Maze, 5);
+	EqualizeHistogram(Maze, Maze);
+	Laplacian(Maze, Maze);
+	MorphOpen(Maze, Maze, 3);
+	AdaptiveThreshold(Maze, Maze);
+	MorphClose(Maze, Maze, 3);
+	MorphOpen(Maze, Maze, 3);
+	image MazeLabels = ImageI32(Maze);
+	u32 LabelCount = ConnectedComponents(Maze, &MazeLabels);
+	ExtractLargestLabeledFeatures(Maze, Maze, &MazeLabels, LabelCount, 15, 30);
+	MorphClose(Maze, Maze, 5);
 	// TODO(alex): fill the small holes
-	return Maze;
 }
 
 void
@@ -209,10 +207,19 @@ Dictymaze()
 	char OutputWindowName2[] = "Output 2";
 	CreateWindow(OutputWindowName2);
 
+	// char HistogramWindowName1[] = "Histogram 1";
+	// CreateWindow(HistogramWindowName1);
+
+	// char HistogramWindowName2[] = "Histogram 2";
+	// CreateWindow(HistogramWindowName2);
+
+	image CellsHistDisplay = ImageU8(1000, 256 * 4);
+	image CellsHistGradientDisplay = ImageU8(1000, 256 * 4);
+
 	b32 Running = true;
 	b32 Paused = true;
 	u32 FrameTime = 33;
-	u32 ImageIndex = 501;
+	u32 ImageIndex = 503;
 	while (Running)
 	{
 		// image* Image = GetImage(&ImageSet, ImageIndex);
@@ -223,25 +230,25 @@ Dictymaze()
 		image StabilizedImageEq = CloneImage(StabilizedImage);
 		EqualizeHistogram(&StabilizedImageEq, &StabilizedImageEq);
 
-		image Maze = ExtractMaze(&StabilizedImageEq);
-		image AreaOfInterestMask = ImageU8(StabilizedImage);
+		image Maze = CloneImage(&StabilizedImageEq);
+		ExtractMaze(&StabilizedImageEq, &Maze);
+		image AreaOfInterestMask = ImageU8(&StabilizedImageEq);
 		point_i32 AreaOfInterest[4] = {{82, 22}, {72, 335}, {930, 343}, {940, 47}};
 		FillConvexPoly(&AreaOfInterestMask, AreaOfInterest, ArrayCount(AreaOfInterest), 255);
+
 		AreaOfInterestMask = AreaOfInterestMask & Maze;
 
 		image Difference = ImageU8(StabilizedImage);
 		AbsoluteDifference(&StabilizedImageEq, &StabilizedPrevImageEq, &Difference);
 		Difference = Difference & AreaOfInterestMask;
 
-
 		image Cells = ImageU8(&Difference);
 		DifferenceCellFilter(&Difference, &Cells);
 		ShowImage(OutputWindowName1, &Cells);
 
 		histogram CellsHist = CalculateHistogram(&Cells);
-		image CellsHistDisplay = ImageU8(1000, 256 * 4);
-		HistogramDraw(&CellsHistDisplay, &CellsHist, 8);
-		ShowImage("Cells Histogram", &CellsHistDisplay);
+		// HistogramDraw(&CellsHistDisplay, &CellsHist, 8);
+		// ShowImage(HistogramWindowName1, &CellsHistDisplay);
 
 		i32 CellsHistGradient[256] = {};
 		i32 MinGradient = 0;
@@ -271,13 +278,89 @@ Dictymaze()
 		{
 			CellsHistGradient[Index] -= MinGradient;
 		}
-		image CellsHistGradientDisplay = ImageU8(1000, 256 * 4);
-		HistogramDraw(&CellsHistGradientDisplay, &CellsHist);
-		ShowImage("Cells Histogram Gradient", &CellsHistGradientDisplay);
+		// HistogramDraw(&CellsHistGradientDisplay, &CellsHist);
+		// ShowImage(HistogramWindowName2, &CellsHistGradientDisplay);
 		
-		// ThresholdTop(&Cells, &Cells, 0.0075, true);
 		cv::threshold(Cells, Cells, Threshold, 255, cv::THRESH_TOZERO);
 		ShowImage(OutputWindowName2, &Cells);
+
+		image CandidateCellLabels = ImageI32(&Cells);
+		u32 CandidateCellCount = ConnectedComponents(&Cells, &CandidateCellLabels);
+		
+		candidate_cell* CandidateCells = (candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(candidate_cell));
+		for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
+		{
+			CandidateCells[LabelIndex].Label = LabelIndex;
+			CandidateCells[LabelIndex].TopLeft = {Cells.cols, Cells.rows};
+			CandidateCells[LabelIndex].BottomRight = {};
+			CandidateCells[LabelIndex].Center = {};
+			CandidateCells[LabelIndex].Size = 0;
+			CandidateCells[LabelIndex].WeightedSize = 0.;
+		}
+
+		for (i32 Row = 0; Row < CandidateCellLabels.rows; ++Row)
+		{
+			for (i32 Col = 0; Col < CandidateCellLabels.cols; ++Col)
+			{
+				point_i32 Point = {Col, Row};
+				i32 Label = GetAtI32(&CandidateCellLabels, Point);
+				u8 Value = GetAtU8(&Cells, Point);
+
+				if (Row < CandidateCells[Label].TopLeft.I)
+				{
+					CandidateCells[Label].TopLeft.I = Row;
+				}
+				if (Col < CandidateCells[Label].TopLeft.J)
+				{
+					CandidateCells[Label].TopLeft.J = Col;
+				}
+
+				if (Row > CandidateCells[Label].BottomRight.I)
+				{
+					CandidateCells[Label].BottomRight.I = Row;
+				}
+				if (Col > CandidateCells[Label].BottomRight.J)
+				{
+					CandidateCells[Label].BottomRight.J = Col;
+				}
+
+				CandidateCells[Label].Center.I += Row;
+				CandidateCells[Label].Center.J += Col;
+				CandidateCells[Label].Size += 1;
+				CandidateCells[Label].WeightedSize += (f32)Value / 255.;
+			}
+		}
+
+		for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
+		{
+			u32 Size = CandidateCells[LabelIndex].Size;
+			CandidateCells[LabelIndex].Center.I /= Size;
+			CandidateCells[LabelIndex].Center.J /= Size;
+		}
+
+		image OutputCells = ImageU8C3(&Cells);
+		for (i32 Row = 0; Row < Cells.rows; ++Row)
+		{
+			for (i32 Col = 0; Col < Cells.cols; ++Col)
+			{
+				point_i32 Point = {Col, Row};
+				u8 Value = GetAtU8(&Cells, Point);
+				pixel_rgb Pixel = {Value, Value, Value};
+				SetAtU8C3(&OutputCells, Point, Pixel);
+			}
+		}
+
+		for (i32 CellIndex = 0; CellIndex < 12; ++CellIndex)
+		{
+			candidate_cell Cell = CandidateCells[CellIndex];
+
+			cv::Scalar Color(HighlightColors[CellIndex].B, HighlightColors[CellIndex].G, HighlightColors[CellIndex].R);
+			cv::rectangle(OutputCells, {Cell.TopLeft.X - 1, Cell.TopLeft.Y - 1}, {Cell.BottomRight.X + 1, Cell.BottomRight.Y + 1}, Color);
+		}
+
+		ShowImage("Cells", &OutputCells);
+
+		FreeOnStackSafe(CandidateCells);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)
