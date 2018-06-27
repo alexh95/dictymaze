@@ -1,5 +1,29 @@
 #include "dictymaze_opencv.h"
-#include "dictymaze_math.h"
+
+inline point_i32
+PointI32(i32 X, i32 Y)
+{
+	point_i32 Result = {X, Y};
+	return Result;
+}
+
+inline point_i32
+operator+(point_i32 A, point_i32 B)
+{
+	point_i32 Result;
+
+	Result.X = A.X + B.X;
+	Result.Y = A.Y + B.Y;
+
+	return Result;
+}
+
+inline point_i32
+operator+=(point_i32& A, point_i32 B)
+{
+	A = A + B;
+	return A;
+}
 
 inline image
 ImageU8(u32 Rows, u32 Cols, u8 Value = 0)
@@ -76,6 +100,30 @@ inline void
 SetAtI32(image* Image, point_i32 Point, i32 Value)
 {
 	Image->at<i32>(Point.I, Point.J) = Value;
+}
+
+inline image
+ImageF32(u32 Rows, u32 Cols, f32 Value = 0.f)
+{
+	return image(Rows, Cols, CV_32FC1, cv::Scalar(Value));
+}
+
+inline image
+ImageF32(image* Image, f32 Value = 0.f)
+{
+	return ImageF32(Image->rows, Image->cols, Value);
+}
+
+inline f32
+GetAtF32(image* Image, point_i32 Point)
+{
+	return Image->at<f32>(Point.I, Point.J);
+}
+
+inline void
+SetAtF32(image* Image, point_i32 Point, f32 Value)
+{
+	Image->at<f32>(Point.I, Point.J) = Value;
 }
 
 inline image
@@ -281,31 +329,6 @@ ConnectedComponents(image* Src, image* Dst)
 	Assert(Dst->data);
 	u32 Result = cv::connectedComponents(*Src, *Dst, 8, CV_32SC1);
 	return Result;
-}
-
-inline point_i32
-PointI32(i32 I, i32 J)
-{
-	point_i32 Result = point_i32{I, J};
-	return Result;
-}
-
-inline point_i32
-operator+(point_i32 A, point_i32 B)
-{
-	point_i32 Result;
-
-	Result.I = A.I + B.I;
-	Result.J = A.J + B.J;
-
-	return Result;
-}
-
-inline point_i32
-operator+=(point_i32& A, point_i32 B)
-{
-	A = A + B;
-	return A;
 }
 
 inline void

@@ -5,6 +5,8 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/video/tracking.hpp>
 
+#include "dictymaze_math.h"
+
 typedef cv::Mat image;
 
 #define SQRT_2_DIV_2 0.70710678118654752440084436210485
@@ -46,23 +48,6 @@ struct point_i32
 	};
 };
 
-struct point_f32
-{
-	union
-	{
-		struct
-		{
-			f32 J;
-			f32 I;
-		};
-		struct
-		{
-			f32 X;
-			f32 Y;
-		};
-	};
-};
-
 struct image_object
 {
 	u32 Label;
@@ -79,7 +64,7 @@ struct candidate_cell
 	u32 Label;
 	point_i32 TopLeft;
 	point_i32 BottomRight;
-	point_i32 Center;
+	v2 Center;
 	u32 Size;
 	f32 WeightedSize;
 };

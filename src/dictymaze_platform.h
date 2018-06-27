@@ -19,13 +19,17 @@ typedef double f64;
 
 typedef size_t size;
 
-#define Assert(Expression) if (!(Expression)) { *(i32*) 0 = 0; }
+#define Assert(Expression) if (!(Expression)) { *(i32*)0 = 0; }
 
 #define ArrayCount(Array) (sizeof(Array)/(sizeof(Array[0])))
 
-#define Min(A, B) ((A < B) ? (A) : (B))
-
 #define SizeOf(Size) sizeof(Size)
+
+#define Min(A, B) (((A) < (B)) ? (A) : (B))
+
+#define Max(A, B) (((A) < (B)) ? (A) : (B))
+
+#define Sqr(A) ((A) * (A))
 
 void*
 AllocateOnStack(size Size);

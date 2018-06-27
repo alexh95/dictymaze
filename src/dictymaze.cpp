@@ -219,7 +219,17 @@ Dictymaze()
 	b32 Running = true;
 	b32 Paused = true;
 	u32 FrameTime = 33;
-	u32 ImageIndex = 503;
+	u32 ImageIndex = 165;//101;
+
+	cv::KalmanFilter KF(4, 2, 0);
+	std::vector<v2> Predictions;
+	std::vector<v2> Estimations;
+	std::vector<v2> Actual;
+	f32 LastSize = 0.f;
+	b32 DrawCell = false;
+
+	u32 CellsTrackingCount = 0;
+	u32 CellsTrackingMax = 1;
 	while (Running)
 	{
 		// image* Image = GetImage(&ImageSet, ImageIndex);
@@ -247,6 +257,7 @@ Dictymaze()
 		ShowImage(OutputWindowName1, &Cells);
 
 		histogram CellsHist = CalculateHistogram(&Cells);
+
 		// HistogramDraw(&CellsHistDisplay, &CellsHist, 8);
 		// ShowImage(HistogramWindowName1, &CellsHistDisplay);
 
@@ -285,82 +296,238 @@ Dictymaze()
 		ShowImage(OutputWindowName2, &Cells);
 
 		image CandidateCellLabels = ImageI32(&Cells);
-		u32 CandidateCellCount = ConnectedComponents(&Cells, &CandidateCellLabels);
+		u32 CandidateCellCount = ConnectedComponents(&Cells, &CandidateCellLabels) - 1;
 		
-		candidate_cell* CandidateCells = (candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(candidate_cell));
-		for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
+		if (CandidateCellCount > 0)
 		{
-			CandidateCells[LabelIndex].Label = LabelIndex;
-			CandidateCells[LabelIndex].TopLeft = {Cells.cols, Cells.rows};
-			CandidateCells[LabelIndex].BottomRight = {};
-			CandidateCells[LabelIndex].Center = {};
-			CandidateCells[LabelIndex].Size = 0;
-			CandidateCells[LabelIndex].WeightedSize = 0.;
-		}
-
-		for (i32 Row = 0; Row < CandidateCellLabels.rows; ++Row)
-		{
-			for (i32 Col = 0; Col < CandidateCellLabels.cols; ++Col)
+			candidate_cell* CandidateCells = (candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(candidate_cell));
+			for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
 			{
-				point_i32 Point = {Col, Row};
-				i32 Label = GetAtI32(&CandidateCellLabels, Point);
-				u8 Value = GetAtU8(&Cells, Point);
-
-				if (Row < CandidateCells[Label].TopLeft.I)
-				{
-					CandidateCells[Label].TopLeft.I = Row;
-				}
-				if (Col < CandidateCells[Label].TopLeft.J)
-				{
-					CandidateCells[Label].TopLeft.J = Col;
-				}
-
-				if (Row > CandidateCells[Label].BottomRight.I)
-				{
-					CandidateCells[Label].BottomRight.I = Row;
-				}
-				if (Col > CandidateCells[Label].BottomRight.J)
-				{
-					CandidateCells[Label].BottomRight.J = Col;
-				}
-
-				CandidateCells[Label].Center.I += Row;
-				CandidateCells[Label].Center.J += Col;
-				CandidateCells[Label].Size += 1;
-				CandidateCells[Label].WeightedSize += (f32)Value / 255.;
+				CandidateCells[LabelIndex].Label = LabelIndex + 1;
+				CandidateCells[LabelIndex].TopLeft = {Cells.cols, Cells.rows};
+				CandidateCells[LabelIndex].BottomRight = {};
+				CandidateCells[LabelIndex].Center = {};
+				CandidateCells[LabelIndex].Size = 0;
+				CandidateCells[LabelIndex].WeightedSize = 0.;
 			}
-		}
 
-		for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
-		{
-			u32 Size = CandidateCells[LabelIndex].Size;
-			CandidateCells[LabelIndex].Center.I /= Size;
-			CandidateCells[LabelIndex].Center.J /= Size;
-		}
-
-		image OutputCells = ImageU8C3(&Cells);
-		for (i32 Row = 0; Row < Cells.rows; ++Row)
-		{
-			for (i32 Col = 0; Col < Cells.cols; ++Col)
+			for (i32 Row = 0; Row < CandidateCellLabels.rows; ++Row)
 			{
-				point_i32 Point = {Col, Row};
-				u8 Value = GetAtU8(&Cells, Point);
-				pixel_rgb Pixel = {Value, Value, Value};
-				SetAtU8C3(&OutputCells, Point, Pixel);
+				for (i32 Col = 0; Col < CandidateCellLabels.cols; ++Col)
+				{
+					point_i32 Point = {Col, Row};
+					i32 LabelIndex = GetAtI32(&CandidateCellLabels, Point) - 1;
+					if (LabelIndex >= 0)
+					{
+						u8 Value = GetAtU8(&Cells, Point);
+
+						if (Row < CandidateCells[LabelIndex].TopLeft.I)
+						{
+							CandidateCells[LabelIndex].TopLeft.I = Row;
+						}
+						if (Col < CandidateCells[LabelIndex].TopLeft.J)
+						{
+							CandidateCells[LabelIndex].TopLeft.J = Col;
+						}
+
+						if (Row > CandidateCells[LabelIndex].BottomRight.I)
+						{
+							CandidateCells[LabelIndex].BottomRight.I = Row;
+						}
+						if (Col > CandidateCells[LabelIndex].BottomRight.J)
+						{
+							CandidateCells[LabelIndex].BottomRight.J = Col;
+						}
+
+						CandidateCells[LabelIndex].Center.X += (f32)Col;
+						CandidateCells[LabelIndex].Center.Y += (f32)Row;
+						CandidateCells[LabelIndex].Size += 1;
+						CandidateCells[LabelIndex].WeightedSize += (f32)Value / 255.;
+					}
+				}
 			}
+
+			for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
+			{
+				u32 Size = CandidateCells[LabelIndex].Size;
+				CandidateCells[LabelIndex].Center.X /= (f32)Size;
+				CandidateCells[LabelIndex].Center.Y /= (f32)Size;
+			}
+
+			// Sort by size
+			for (i32 CandidateCellIndex1 = 0; CandidateCellIndex1 < CandidateCellCount - 1; ++CandidateCellIndex1)
+			{
+				for (i32 CandidateCellIndex2 = CandidateCellIndex1 + 1; CandidateCellIndex2 < CandidateCellCount; ++CandidateCellIndex2)
+				{
+					if (CandidateCells[CandidateCellIndex1].WeightedSize < CandidateCells[CandidateCellIndex2].WeightedSize)
+					{
+						candidate_cell Temp = CandidateCells[CandidateCellIndex1];
+						CandidateCells[CandidateCellIndex1] = CandidateCells[CandidateCellIndex2];
+						CandidateCells[CandidateCellIndex2] = Temp;
+					}
+				}
+			}
+
+			if (CellsTrackingCount < CellsTrackingMax)
+			{
+				// TODO(alex): initialize only on probable cells
+				b32 ProbableCellDetected = (Threshold < 90) && (CandidateCells[0].WeightedSize >= 256.f);
+
+				if (ProbableCellDetected)
+				{
+					candidate_cell Cell = CandidateCells[0];
+
+					cv::setIdentity(KF.transitionMatrix);
+					KF.transitionMatrix.at<f32>(0, 2) = 1.f;
+					KF.transitionMatrix.at<f32>(1, 3) = 1.f;
+
+					KF.statePre.setTo(0.f);
+					KF.statePre.at<f32>(0) = Cell.Center.X;
+					KF.statePre.at<f32>(1) = Cell.Center.Y;
+
+					KF.statePost.setTo(0.f);
+					KF.statePost.at<f32>(0) = Cell.Center.X;
+					KF.statePost.at<f32>(1) = Cell.Center.Y;
+
+					cv::setIdentity(KF.measurementMatrix);
+					cv::setIdentity(KF.processNoiseCov, cv::Scalar::all(0.001f));
+					cv::setIdentity(KF.measurementNoiseCov, cv::Scalar::all(0.1f));
+					cv::setIdentity(KF.errorCovPost, cv::Scalar::all(0.1f));
+
+					LastSize = Cell.WeightedSize;
+
+					++CellsTrackingCount;
+				}
+			}
+
+			for (u32 CellsTrackingIndex = 0; CellsTrackingIndex < CellsTrackingCount; ++CellsTrackingIndex)
+			{
+				image Prediction = KF.predict();
+				v2 PredictedPoint = {Prediction.at<f32>(0), Prediction.at<f32>(1)};
+				Predictions.push_back(PredictedPoint);
+
+				// Extract movement data
+				std::vector<f32> Scores;
+				for (i32 CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
+				{
+					candidate_cell CandidateCell = CandidateCells[CandidateCellIndex];
+					
+					v2 CenterToPrediction = PredictedPoint - CandidateCell.Center;
+					f32 DistanceSqrToPrediction = Dot(CenterToPrediction, CenterToPrediction);
+
+					f32 DirectionScore = 0.f;
+					if (CenterToPrediction.X > 0.f)
+					{
+						DirectionScore = 1.f;
+					}
+					else if (CenterToPrediction.X > -16.f)
+					{
+						DirectionScore = (16.f - CenterToPrediction.X) / 16.f;
+					}
+					f32 DistanceScore = (DistanceSqrToPrediction <= 625.f) ? (DistanceSqrToPrediction / 625.f) : 0.f;
+					f32 SizeScore = 0.f;
+					if (CandidateCell.WeightedSize > 32.f)
+					{
+						SizeScore = (CandidateCell.WeightedSize < LastSize) ? (LastSize / CandidateCell.WeightedSize) : 1.f;
+					}
+
+					f32 Score = DirectionScore * DistanceScore * SizeScore;
+					Scores.push_back(Score);
+				}
+
+				// Sort
+				for (i32 CandidateCellIndex1 = 0; CandidateCellIndex1 < CandidateCellCount - 1; ++CandidateCellIndex1)
+				{
+					for (i32 CandidateCellIndex2 = CandidateCellIndex1 + 1; CandidateCellIndex2 < CandidateCellCount; ++CandidateCellIndex2)
+					{
+						if (Scores[CandidateCellIndex1] < Scores[CandidateCellIndex2])
+						{
+							candidate_cell Temp = CandidateCells[CandidateCellIndex1];
+							CandidateCells[CandidateCellIndex1] = CandidateCells[CandidateCellIndex2];
+							CandidateCells[CandidateCellIndex2] = Temp;
+
+							f32 TempScore = Scores[CandidateCellIndex1];
+							Scores[CandidateCellIndex1] = Scores[CandidateCellIndex2];
+							Scores[CandidateCellIndex2] = TempScore;
+						}
+					}
+				}
+
+				f32 TopScore = Scores[0];
+				if (TopScore > 0.f)
+				{
+					DrawCell = true;
+
+					candidate_cell TopScoreCandidateCell = CandidateCells[0];
+					Actual.push_back(TopScoreCandidateCell.Center);
+
+					image Correction = ImageF32(2, 1);
+					Correction.at<f32>(0) = TopScoreCandidateCell.Center.X;
+					Correction.at<f32>(1) = TopScoreCandidateCell.Center.Y;
+					image Estimate = KF.correct(Correction);
+					v2 EstimatedPoint = {Estimate.at<f32>(0), Estimate.at<f32>(1)};
+					Estimations.push_back(EstimatedPoint);
+
+					LastSize = TopScoreCandidateCell.WeightedSize;
+				}
+				else
+				{
+					DrawCell = false;
+
+					image Correction = ImageF32(2, 1);
+					Correction.at<f32>(0) = PredictedPoint.X;
+					Correction.at<f32>(1) = PredictedPoint.Y;
+					image Estimate = KF.correct(Correction);
+					v2 EstimatedPoint = {Estimate.at<f32>(0), Estimate.at<f32>(1)};
+					Estimations.push_back(EstimatedPoint);
+
+					Actual.push_back(EstimatedPoint);
+				}
+			}
+
+			// Draw
+			image OutputCells = ImageU8C3(&Cells);
+			for (i32 Row = 0; Row < Cells.rows; ++Row)
+			{
+				for (i32 Col = 0; Col < Cells.cols; ++Col)
+				{
+					point_i32 Point = {Col, Row};
+					u8 Value = GetAtU8(&Cells, Point);
+					pixel_rgb Pixel = {Value, Value, Value};
+					SetAtU8C3(&OutputCells, Point, Pixel);
+				}
+			}
+
+			if (DrawCell)
+			{
+				for (i32 CellIndex = 0; CellIndex < CellsTrackingCount; ++CellIndex)
+				{
+					candidate_cell Cell = CandidateCells[CellIndex];
+
+					cv::Scalar Color(HighlightColors[CellIndex].B, HighlightColors[CellIndex].G, HighlightColors[CellIndex].R);
+					cv::rectangle(OutputCells, {Cell.TopLeft.X - 1, Cell.TopLeft.Y - 1}, {Cell.BottomRight.X + 1, Cell.BottomRight.Y + 1}, Color);
+				}
+			}
+
+			for (i32 PointIndex = 1; PointIndex < Predictions.size(); ++PointIndex)
+			{
+				v2 PrevActualPoint = Actual[PointIndex - 1];
+				v2 ActualPoint = Actual[PointIndex];
+				cv::line(OutputCells, {(i32)PrevActualPoint.X, (i32)PrevActualPoint.Y}, {(i32)ActualPoint.X, (i32)ActualPoint.Y}, cv::Scalar(255, 0, 0));
+
+				v2 PrevPredictionPoint = Predictions[PointIndex - 1];
+				v2 PredictionPoint = Predictions[PointIndex];
+				cv::line(OutputCells, {(i32)PrevPredictionPoint.X, (i32)PrevPredictionPoint.Y}, {(i32)PredictionPoint.X, (i32)PredictionPoint.Y}, cv::Scalar(0, 0, 255));
+
+				v2 PrevEstimatedPoint = Estimations[PointIndex - 1];
+				v2 EstimatedPoint = Estimations[PointIndex];
+				cv::line(OutputCells, {(i32)PrevEstimatedPoint.X, (i32)PrevEstimatedPoint.Y}, {(i32)EstimatedPoint.X, (i32)EstimatedPoint.Y}, cv::Scalar(0, 255, 0));
+			}
+
+			ShowImage("Cells", &OutputCells);
+
+			FreeOnStackSafe(CandidateCells);
 		}
-
-		for (i32 CellIndex = 0; CellIndex < 12; ++CellIndex)
-		{
-			candidate_cell Cell = CandidateCells[CellIndex];
-
-			cv::Scalar Color(HighlightColors[CellIndex].B, HighlightColors[CellIndex].G, HighlightColors[CellIndex].R);
-			cv::rectangle(OutputCells, {Cell.TopLeft.X - 1, Cell.TopLeft.Y - 1}, {Cell.BottomRight.X + 1, Cell.BottomRight.Y + 1}, Color);
-		}
-
-		ShowImage("Cells", &OutputCells);
-
-		FreeOnStackSafe(CandidateCells);
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)
@@ -392,7 +559,12 @@ Dictymaze()
 			} break;
 			case -1:
 			{
-				ImageIndex = NextImageIndex(ImageIndex);
+				u32 NewImageIndex = NextImageIndex(ImageIndex);
+				ImageIndex = NewImageIndex;
+				if (NewImageIndex < ImageIndex)
+				{
+					Paused = true;
+				}
 			} break;
 			default: 
 			{

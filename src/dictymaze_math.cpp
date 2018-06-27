@@ -1,6 +1,24 @@
 #include "dictymaze_math.h"
 
-v2
+inline v2
+V2(f32 X, f32 Y)
+{
+	v2 Result = v2{X, Y};
+	return Result;
+}
+
+inline v2
+operator-(v2 A)
+{
+	v2 Result;
+
+	Result.X = -A.X;
+	Result.Y = -A.Y;
+
+	return Result;
+}
+
+inline v2
 operator+(v2 A, v2 B)
 {
 	v2 Result;
@@ -11,11 +29,51 @@ operator+(v2 A, v2 B)
 	return Result;
 }
 
-v2
+inline v2
 operator+=(v2& A, v2 B)
 {
 	A = A + B;
 	return A;
+}
+
+inline v2
+operator-(v2 A, v2 B)
+{
+	v2 Result;
+
+	Result.X = A.X - B.X;
+	Result.Y = A.Y - B.Y;
+
+	return Result;
+}
+
+inline v2
+operator-=(v2& A, v2 B)
+{
+	A = A - B;
+	return A;
+}
+
+inline f32
+Dot(v2 A, v2 B)
+{
+	f32 Result = A.X * B.X + A.Y * B.Y;
+	return Result;
+}
+
+inline f32
+DistanceSqr(v2 A, v2 B)
+{
+	v2 D = A - B;
+	f32 Result = Dot(D, D);
+	return Result;
+}
+
+v3
+V3(f32 X, f32 Y, f32 Z)
+{
+	v3 Result = v3{X, Y, Z};
+	return Result;
 }
 
 v3
