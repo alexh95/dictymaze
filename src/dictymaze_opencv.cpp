@@ -771,3 +771,60 @@ HistogramDraw(image* Dst, histogram* Histogram, u32 From = 0, u32 To = 256)
 		cv::rectangle(*Dst, Point1, Point2, cv::Scalar(255), CV_FILLED);
 	}
 }
+
+void
+ExtractCandidateCells(image* Cells, image* CandidateCellLabels, candidate_cell* CandidateCells, u32 CandidateCellCount)
+{
+	for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
+	{
+		CandidateCells[LabelIndex].Label = LabelIndex + 1;
+		CandidateCells[LabelIndex].TopLeft = {Cells->cols, Cells->rows};
+		CandidateCells[LabelIndex].BottomRight = {};
+		CandidateCells[LabelIndex].Center = {};
+		CandidateCells[LabelIndex].Size = 0;
+		CandidateCells[LabelIndex].WeightedSize = 0.;
+	}
+
+	for (i32 Row = 0; Row < Cells->rows; ++Row)
+	{
+		for (i32 Col = 0; Col < Cells->cols; ++Col)
+		{
+			point_i32 Point = {Col, Row};
+			i32 LabelIndex = GetAtI32(CandidateCellLabels, Point) - 1;
+			if (LabelIndex >= 0)
+			{
+				u8 Value = GetAtU8(Cells, Point);
+
+				if (Row < CandidateCells[LabelIndex].TopLeft.I)
+				{
+					CandidateCells[LabelIndex].TopLeft.I = Row;
+				}
+				if (Col < CandidateCells[LabelIndex].TopLeft.J)
+				{
+					CandidateCells[LabelIndex].TopLeft.J = Col;
+				}
+
+				if (Row > CandidateCells[LabelIndex].BottomRight.I)
+				{
+					CandidateCells[LabelIndex].BottomRight.I = Row;
+				}
+				if (Col > CandidateCells[LabelIndex].BottomRight.J)
+				{
+					CandidateCells[LabelIndex].BottomRight.J = Col;
+				}
+
+				CandidateCells[LabelIndex].Center.X += (f32)Col;
+				CandidateCells[LabelIndex].Center.Y += (f32)Row;
+				CandidateCells[LabelIndex].Size += 1;
+				CandidateCells[LabelIndex].WeightedSize += (f32)Value / 255.;
+			}
+		}
+	}
+
+	for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
+	{
+		u32 Size = CandidateCells[LabelIndex].Size;
+		CandidateCells[LabelIndex].Center.X /= (f32)Size;
+		CandidateCells[LabelIndex].Center.Y /= (f32)Size;
+	}
+}

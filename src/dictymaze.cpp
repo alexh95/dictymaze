@@ -190,9 +190,16 @@ ExtractMaze(image* Src, image* Maze)
 }
 
 inline b32
-CompareAnalyzedCandidateCells(analyzed_candidate_cell A, analyzed_candidate_cell B)
+CompareCandidateCells(candidate_cell* A, candidate_cell* B)
 {
-	b32 Result = A.Score < B.Score;
+	b32 Result = A->WeightedSize < B->WeightedSize;
+	return Result;
+}
+
+inline b32
+CompareAnalyzedCandidateCells(analyzed_candidate_cell* A, analyzed_candidate_cell* B)
+{
+	b32 Result = A->Score < B->Score;
 	return Result;
 }
 
@@ -315,103 +322,9 @@ Dictymaze()
 		if (CandidateCellCount > 0)
 		{
 			candidate_cell* CandidateCells = (candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(candidate_cell));
-			for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
-			{
-				CandidateCells[LabelIndex].Label = LabelIndex + 1;
-				CandidateCells[LabelIndex].TopLeft = {Cells.cols, Cells.rows};
-				CandidateCells[LabelIndex].BottomRight = {};
-				CandidateCells[LabelIndex].Center = {};
-				CandidateCells[LabelIndex].Size = 0;
-				CandidateCells[LabelIndex].WeightedSize = 0.;
-			}
+			ExtractCandidateCells(&Cells, &CandidateCellLabels, CandidateCells, CandidateCellCount);
 
-			for (i32 Row = 0; Row < CandidateCellLabels.rows; ++Row)
-			{
-				for (i32 Col = 0; Col < CandidateCellLabels.cols; ++Col)
-				{
-					point_i32 Point = {Col, Row};
-					i32 LabelIndex = GetAtI32(&CandidateCellLabels, Point) - 1;
-					if (LabelIndex >= 0)
-					{
-						u8 Value = GetAtU8(&Cells, Point);
-
-						if (Row < CandidateCells[LabelIndex].TopLeft.I)
-						{
-							CandidateCells[LabelIndex].TopLeft.I = Row;
-						}
-						if (Col < CandidateCells[LabelIndex].TopLeft.J)
-						{
-							CandidateCells[LabelIndex].TopLeft.J = Col;
-						}
-
-						if (Row > CandidateCells[LabelIndex].BottomRight.I)
-						{
-							CandidateCells[LabelIndex].BottomRight.I = Row;
-						}
-						if (Col > CandidateCells[LabelIndex].BottomRight.J)
-						{
-							CandidateCells[LabelIndex].BottomRight.J = Col;
-						}
-
-						CandidateCells[LabelIndex].Center.X += (f32)Col;
-						CandidateCells[LabelIndex].Center.Y += (f32)Row;
-						CandidateCells[LabelIndex].Size += 1;
-						CandidateCells[LabelIndex].WeightedSize += (f32)Value / 255.;
-					}
-				}
-			}
-
-			for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
-			{
-				u32 Size = CandidateCells[LabelIndex].Size;
-				CandidateCells[LabelIndex].Center.X /= (f32)Size;
-				CandidateCells[LabelIndex].Center.Y /= (f32)Size;
-			}
-
-			// Sort by size
-			for (i32 CandidateCellIndex1 = 0; CandidateCellIndex1 < CandidateCellCount - 1; ++CandidateCellIndex1)
-			{
-				for (i32 CandidateCellIndex2 = CandidateCellIndex1 + 1; CandidateCellIndex2 < CandidateCellCount; ++CandidateCellIndex2)
-				{
-					if (CandidateCells[CandidateCellIndex1].WeightedSize < CandidateCells[CandidateCellIndex2].WeightedSize)
-					{
-						candidate_cell Temp = CandidateCells[CandidateCellIndex1];
-						CandidateCells[CandidateCellIndex1] = CandidateCells[CandidateCellIndex2];
-						CandidateCells[CandidateCellIndex2] = Temp;
-					}
-				}
-			}
-
-			if (CellsTrackingCount < CellsTrackingMax)
-			{
-				b32 ProbableCellDetected = (ThresholdValue < 90) && (CandidateCells[0].WeightedSize >= 256.f);
-
-				if (ProbableCellDetected)
-				{
-					candidate_cell Cell = CandidateCells[0];
-
-					cv::setIdentity(KF.transitionMatrix);
-					KF.transitionMatrix.at<f32>(0, 2) = 1.f;
-					KF.transitionMatrix.at<f32>(1, 3) = 1.f;
-
-					KF.statePre.setTo(0.f);
-					KF.statePre.at<f32>(0) = Cell.Center.X;
-					KF.statePre.at<f32>(1) = Cell.Center.Y;
-
-					KF.statePost.setTo(0.f);
-					KF.statePost.at<f32>(0) = Cell.Center.X;
-					KF.statePost.at<f32>(1) = Cell.Center.Y;
-
-					cv::setIdentity(KF.measurementMatrix);
-					cv::setIdentity(KF.processNoiseCov, cv::Scalar::all(0.001f));
-					cv::setIdentity(KF.measurementNoiseCov, cv::Scalar::all(0.1f));
-					cv::setIdentity(KF.errorCovPost, cv::Scalar::all(0.1f));
-
-					LastSize = Cell.WeightedSize;
-
-					++CellsTrackingCount;
-				}
-			}
+			Sort(CandidateCells, candidate_cell, CandidateCellCount, CompareCandidateCells);
 
 			analyzed_candidate_cell* AnalyzedCandidateCells = (analyzed_candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(analyzed_candidate_cell));
 			for (u32 CellsTrackingIndex = 0; CellsTrackingIndex < CellsTrackingCount; ++CellsTrackingIndex)
@@ -482,6 +395,38 @@ Dictymaze()
 					Estimations.push_back(EstimatedPoint);
 
 					Actual.push_back(EstimatedPoint);
+				}
+			}
+
+			// NOTE(alex): start tracking new cells
+			if (CellsTrackingCount < CellsTrackingMax)
+			{
+				b32 ProbableCellDetected = (ThresholdValue < 90) && (CandidateCells[0].WeightedSize >= 256.f);
+
+				if (ProbableCellDetected)
+				{
+					candidate_cell Cell = CandidateCells[0];
+
+					cv::setIdentity(KF.transitionMatrix);
+					KF.transitionMatrix.at<f32>(0, 2) = 1.f;
+					KF.transitionMatrix.at<f32>(1, 3) = 1.f;
+
+					KF.statePre.setTo(0.f);
+					KF.statePre.at<f32>(0) = Cell.Center.X;
+					KF.statePre.at<f32>(1) = Cell.Center.Y;
+
+					KF.statePost.setTo(0.f);
+					KF.statePost.at<f32>(0) = Cell.Center.X;
+					KF.statePost.at<f32>(1) = Cell.Center.Y;
+
+					cv::setIdentity(KF.measurementMatrix);
+					cv::setIdentity(KF.processNoiseCov, cv::Scalar::all(0.001f));
+					cv::setIdentity(KF.measurementNoiseCov, cv::Scalar::all(0.1f));
+					cv::setIdentity(KF.errorCovPost, cv::Scalar::all(0.1f));
+
+					LastSize = Cell.WeightedSize;
+
+					++CellsTrackingCount;
 				}
 			}
 

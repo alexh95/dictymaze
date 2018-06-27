@@ -17,7 +17,7 @@ for (u32 Index1 = 0; Index1 < Size - 1; ++Index1)\
 	{\
 		Type* A = Array + Index1;\
 		Type* B = Array + Index2;\
-		if (Comparator(*A, *B))\
+		if (Comparator(A, B))\
 		{\
 			Type Temp = *A;\
 			*A = *B;\
