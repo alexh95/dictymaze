@@ -317,6 +317,12 @@ MorphClose(image* Src, image* Dst, u32 KernelSize)
 }
 
 inline void
+Threshold(image* Src, image* Dst, u32 ThresholdValue)
+{
+	cv::threshold(*Src, *Dst, ThresholdValue, 255, cv::THRESH_TOZERO);
+}
+
+inline void
 AdaptiveThreshold(image* Src, image* Dst)
 {
 	Assert(Dst->data);

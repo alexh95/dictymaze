@@ -69,5 +69,11 @@ struct candidate_cell
 	f32 WeightedSize;
 };
 
+struct analyzed_candidate_cell
+{
+	candidate_cell* CandidateCell;
+	f32 Score;
+};
+
 #define DICTYMAZE_OPENCV_H
 #endif

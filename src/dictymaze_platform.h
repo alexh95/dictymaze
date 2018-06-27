@@ -25,12 +25,6 @@ typedef size_t size;
 
 #define SizeOf(Size) sizeof(Size)
 
-#define Min(A, B) (((A) < (B)) ? (A) : (B))
-
-#define Max(A, B) (((A) < (B)) ? (A) : (B))
-
-#define Sqr(A) ((A) * (A))
-
 void*
 AllocateOnStack(size Size);
 

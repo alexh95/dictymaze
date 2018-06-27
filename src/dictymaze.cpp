@@ -189,6 +189,13 @@ ExtractMaze(image* Src, image* Maze)
 	// TODO(alex): fill the small holes
 }
 
+inline b32
+CompareAnalyzedCandidateCells(analyzed_candidate_cell A, analyzed_candidate_cell B)
+{
+	b32 Result = A.Score < B.Score;
+	return Result;
+}
+
 void
 Dictymaze()
 {
@@ -207,11 +214,13 @@ Dictymaze()
 	char OutputWindowName2[] = "Output 2";
 	CreateWindow(OutputWindowName2);
 
-	// char HistogramWindowName1[] = "Histogram 1";
-	// CreateWindow(HistogramWindowName1);
+#if DRAW_HISTOGRAMS
+	char HistogramWindowName1[] = "Histogram 1";
+	CreateWindow(HistogramWindowName1);
 
-	// char HistogramWindowName2[] = "Histogram 2";
-	// CreateWindow(HistogramWindowName2);
+	char HistogramWindowName2[] = "Histogram 2";
+	CreateWindow(HistogramWindowName2);
+#endif
 
 	image CellsHistDisplay = ImageU8(1000, 256 * 4);
 	image CellsHistGradientDisplay = ImageU8(1000, 256 * 4);
@@ -258,8 +267,10 @@ Dictymaze()
 
 		histogram CellsHist = CalculateHistogram(&Cells);
 
-		// HistogramDraw(&CellsHistDisplay, &CellsHist, 8);
-		// ShowImage(HistogramWindowName1, &CellsHistDisplay);
+#if DRAW_HISTOGRAMS
+		HistogramDraw(&CellsHistDisplay, &CellsHist, 8);
+		ShowImage(HistogramWindowName1, &CellsHistDisplay);
+#endif
 
 		i32 CellsHistGradient[256] = {};
 		i32 MinGradient = 0;
@@ -275,13 +286,13 @@ Dictymaze()
 			CellsHistGradient[Index] = Gradient;
 		}
 
-		u32 Threshold = 0;
+		u32 ThresholdValue = 0;
 		for (u32 Index = 0; Index < ArrayCount(CellsHistGradient); ++Index)
 		{
 			i32 Gradient = CellsHistGradient[Index];
 			if (Abs(Gradient) >= 20)
 			{
-				Threshold = Index;
+				ThresholdValue = Index;
 			}
 		}
 
@@ -289,10 +300,13 @@ Dictymaze()
 		{
 			CellsHistGradient[Index] -= MinGradient;
 		}
-		// HistogramDraw(&CellsHistGradientDisplay, &CellsHist);
-		// ShowImage(HistogramWindowName2, &CellsHistGradientDisplay);
-		
-		cv::threshold(Cells, Cells, Threshold, 255, cv::THRESH_TOZERO);
+
+#if DRAW_HISTOGRAMS
+		HistogramDraw(&CellsHistGradientDisplay, &CellsHist);
+		ShowImage(HistogramWindowName2, &CellsHistGradientDisplay);
+#endif
+
+		Threshold(&Cells, &Cells, ThresholdValue);
 		ShowImage(OutputWindowName2, &Cells);
 
 		image CandidateCellLabels = ImageI32(&Cells);
@@ -370,8 +384,7 @@ Dictymaze()
 
 			if (CellsTrackingCount < CellsTrackingMax)
 			{
-				// TODO(alex): initialize only on probable cells
-				b32 ProbableCellDetected = (Threshold < 90) && (CandidateCells[0].WeightedSize >= 256.f);
+				b32 ProbableCellDetected = (ThresholdValue < 90) && (CandidateCells[0].WeightedSize >= 256.f);
 
 				if (ProbableCellDetected)
 				{
@@ -400,83 +413,70 @@ Dictymaze()
 				}
 			}
 
+			analyzed_candidate_cell* AnalyzedCandidateCells = (analyzed_candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(analyzed_candidate_cell));
 			for (u32 CellsTrackingIndex = 0; CellsTrackingIndex < CellsTrackingCount; ++CellsTrackingIndex)
 			{
 				image Prediction = KF.predict();
 				v2 PredictedPoint = {Prediction.at<f32>(0), Prediction.at<f32>(1)};
 				Predictions.push_back(PredictedPoint);
 
-				// Extract movement data
-				std::vector<f32> Scores;
 				for (i32 CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
 				{
-					candidate_cell CandidateCell = CandidateCells[CandidateCellIndex];
+					candidate_cell* CandidateCell = CandidateCells + CandidateCellIndex;
 					
-					v2 CenterToPrediction = PredictedPoint - CandidateCell.Center;
+					v2 CenterToPrediction = PredictedPoint - CandidateCell->Center;
 					f32 DistanceSqrToPrediction = Dot(CenterToPrediction, CenterToPrediction);
 
+					// TODO(alex): angle this
 					f32 DirectionScore = 0.f;
 					if (CenterToPrediction.X > 0.f)
 					{
 						DirectionScore = 1.f;
 					}
-					else if (CenterToPrediction.X > -16.f)
+					else if (CenterToPrediction.X > -32.f)
 					{
-						DirectionScore = (16.f - CenterToPrediction.X) / 16.f;
+						DirectionScore = (32.f - CenterToPrediction.X) / 32.f;
 					}
-					f32 DistanceScore = (DistanceSqrToPrediction <= 625.f) ? (DistanceSqrToPrediction / 625.f) : 0.f;
+					f32 DistanceScore = (DistanceSqrToPrediction <= 625.f) ? ((625.f - DistanceSqrToPrediction) / 625.f) : 0.f;
 					f32 SizeScore = 0.f;
-					if (CandidateCell.WeightedSize > 32.f)
+					if (CandidateCell->WeightedSize > 32.f)
 					{
-						SizeScore = (CandidateCell.WeightedSize < LastSize) ? (LastSize / CandidateCell.WeightedSize) : 1.f;
+						SizeScore = (CandidateCell->WeightedSize < LastSize) ? (LastSize / CandidateCell->WeightedSize) : 1.f;
 					}
 
 					f32 Score = DirectionScore * DistanceScore * SizeScore;
-					Scores.push_back(Score);
+
+					analyzed_candidate_cell* AnalyzedCandidateCell = AnalyzedCandidateCells + CandidateCellIndex;
+					AnalyzedCandidateCell->CandidateCell = CandidateCell;
+					AnalyzedCandidateCell->Score = Score;
 				}
 
-				// Sort
-				for (i32 CandidateCellIndex1 = 0; CandidateCellIndex1 < CandidateCellCount - 1; ++CandidateCellIndex1)
-				{
-					for (i32 CandidateCellIndex2 = CandidateCellIndex1 + 1; CandidateCellIndex2 < CandidateCellCount; ++CandidateCellIndex2)
-					{
-						if (Scores[CandidateCellIndex1] < Scores[CandidateCellIndex2])
-						{
-							candidate_cell Temp = CandidateCells[CandidateCellIndex1];
-							CandidateCells[CandidateCellIndex1] = CandidateCells[CandidateCellIndex2];
-							CandidateCells[CandidateCellIndex2] = Temp;
+				Sort(AnalyzedCandidateCells, analyzed_candidate_cell, CandidateCellCount, CompareAnalyzedCandidateCells);
 
-							f32 TempScore = Scores[CandidateCellIndex1];
-							Scores[CandidateCellIndex1] = Scores[CandidateCellIndex2];
-							Scores[CandidateCellIndex2] = TempScore;
-						}
-					}
-				}
-
-				f32 TopScore = Scores[0];
+				f32 TopScore = AnalyzedCandidateCells[0].Score;
 				if (TopScore > 0.f)
 				{
 					DrawCell = true;
 
-					candidate_cell TopScoreCandidateCell = CandidateCells[0];
-					Actual.push_back(TopScoreCandidateCell.Center);
+					candidate_cell* TopScoreCandidateCell = AnalyzedCandidateCells[0].CandidateCell;
+					Actual.push_back(TopScoreCandidateCell->Center);
 
 					image Correction = ImageF32(2, 1);
-					Correction.at<f32>(0) = TopScoreCandidateCell.Center.X;
-					Correction.at<f32>(1) = TopScoreCandidateCell.Center.Y;
+					Correction.at<f32>(0) = TopScoreCandidateCell->Center.X;
+					Correction.at<f32>(1) = TopScoreCandidateCell->Center.Y;
 					image Estimate = KF.correct(Correction);
 					v2 EstimatedPoint = {Estimate.at<f32>(0), Estimate.at<f32>(1)};
 					Estimations.push_back(EstimatedPoint);
 
-					LastSize = TopScoreCandidateCell.WeightedSize;
+					LastSize = TopScoreCandidateCell->WeightedSize;
 				}
 				else
 				{
 					DrawCell = false;
 
 					image Correction = ImageF32(2, 1);
-					Correction.at<f32>(0) = PredictedPoint.X;
-					Correction.at<f32>(1) = PredictedPoint.Y;
+					Correction.at<f32>(0) = Actual[Actual.size() - 1].X;
+					Correction.at<f32>(1) = Actual[Actual.size() - 1].Y;
 					image Estimate = KF.correct(Correction);
 					v2 EstimatedPoint = {Estimate.at<f32>(0), Estimate.at<f32>(1)};
 					Estimations.push_back(EstimatedPoint);
@@ -502,10 +502,10 @@ Dictymaze()
 			{
 				for (i32 CellIndex = 0; CellIndex < CellsTrackingCount; ++CellIndex)
 				{
-					candidate_cell Cell = CandidateCells[CellIndex];
+					candidate_cell* Cell = AnalyzedCandidateCells[CellIndex].CandidateCell;
 
 					cv::Scalar Color(HighlightColors[CellIndex].B, HighlightColors[CellIndex].G, HighlightColors[CellIndex].R);
-					cv::rectangle(OutputCells, {Cell.TopLeft.X - 1, Cell.TopLeft.Y - 1}, {Cell.BottomRight.X + 1, Cell.BottomRight.Y + 1}, Color);
+					cv::rectangle(OutputCells, {Cell->TopLeft.X - 1, Cell->TopLeft.Y - 1}, {Cell->BottomRight.X + 1, Cell->BottomRight.Y + 1}, Color);
 				}
 			}
 
@@ -527,6 +527,7 @@ Dictymaze()
 			ShowImage("Cells", &OutputCells);
 
 			FreeOnStackSafe(CandidateCells);
+			FreeOnStackSafe(AnalyzedCandidateCells);
 		}
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);

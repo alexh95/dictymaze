@@ -16,6 +16,8 @@
 #define KEY_LEFT 2424832
 #define KEY_DOWN 2621440
 
+#define DRAW_HISTOGRAMS false
+
 struct image_set
 {
 	char Name[256];
