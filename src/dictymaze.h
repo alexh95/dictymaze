@@ -18,6 +18,8 @@
 
 #define DRAW_HISTOGRAMS false
 
+#define CELL_TRACKER_MAX 1//4
+
 struct image_set
 {
 	char Name[256];

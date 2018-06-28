@@ -9,6 +9,8 @@
 
 typedef cv::Mat image;
 
+typedef cv::KalmanFilter kalman_filter;
+
 #define SQRT_2_DIV_2 0.70710678118654752440084436210485
 
 struct pixel_rgb
@@ -48,6 +50,12 @@ struct point_i32
 	};
 };
 
+struct rect_i32
+{
+	point_i32 TopLeft;
+	point_i32 BottomRight;
+};
+
 struct image_object
 {
 	u32 Label;
@@ -62,8 +70,7 @@ struct histogram
 struct candidate_cell
 {
 	u32 Label;
-	point_i32 TopLeft;
-	point_i32 BottomRight;
+	rect_i32 BoundingBox;
 	v2 Center;
 	u32 Size;
 	f32 WeightedSize;
@@ -73,6 +80,17 @@ struct analyzed_candidate_cell
 {
 	candidate_cell* CandidateCell;
 	f32 Score;
+};
+
+struct cell_tracker
+{
+	kalman_filter KalmanFilter;
+	v2* PredictedPositions;
+	v2* EstimatedPositions;
+	v2* ActualPositions;
+	rect_i32* BoundingBoxes;
+	f32* Sizes;
+	u32 StateCount;
 };
 
 #define DICTYMAZE_OPENCV_H

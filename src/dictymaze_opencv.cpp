@@ -778,8 +778,8 @@ ExtractCandidateCells(image* Cells, image* CandidateCellLabels, candidate_cell* 
 	for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
 	{
 		CandidateCells[LabelIndex].Label = LabelIndex + 1;
-		CandidateCells[LabelIndex].TopLeft = {Cells->cols, Cells->rows};
-		CandidateCells[LabelIndex].BottomRight = {};
+		CandidateCells[LabelIndex].BoundingBox.TopLeft = {Cells->cols, Cells->rows};
+		CandidateCells[LabelIndex].BoundingBox.BottomRight = {};
 		CandidateCells[LabelIndex].Center = {};
 		CandidateCells[LabelIndex].Size = 0;
 		CandidateCells[LabelIndex].WeightedSize = 0.;
@@ -795,22 +795,22 @@ ExtractCandidateCells(image* Cells, image* CandidateCellLabels, candidate_cell* 
 			{
 				u8 Value = GetAtU8(Cells, Point);
 
-				if (Row < CandidateCells[LabelIndex].TopLeft.I)
+				if (Row < CandidateCells[LabelIndex].BoundingBox.TopLeft.I)
 				{
-					CandidateCells[LabelIndex].TopLeft.I = Row;
+					CandidateCells[LabelIndex].BoundingBox.TopLeft.I = Row;
 				}
-				if (Col < CandidateCells[LabelIndex].TopLeft.J)
+				if (Col < CandidateCells[LabelIndex].BoundingBox.TopLeft.J)
 				{
-					CandidateCells[LabelIndex].TopLeft.J = Col;
+					CandidateCells[LabelIndex].BoundingBox.TopLeft.J = Col;
 				}
 
-				if (Row > CandidateCells[LabelIndex].BottomRight.I)
+				if (Row > CandidateCells[LabelIndex].BoundingBox.BottomRight.I)
 				{
-					CandidateCells[LabelIndex].BottomRight.I = Row;
+					CandidateCells[LabelIndex].BoundingBox.BottomRight.I = Row;
 				}
-				if (Col > CandidateCells[LabelIndex].BottomRight.J)
+				if (Col > CandidateCells[LabelIndex].BoundingBox.BottomRight.J)
 				{
-					CandidateCells[LabelIndex].BottomRight.J = Col;
+					CandidateCells[LabelIndex].BoundingBox.BottomRight.J = Col;
 				}
 
 				CandidateCells[LabelIndex].Center.X += (f32)Col;
@@ -827,4 +827,105 @@ ExtractCandidateCells(image* Cells, image* CandidateCellLabels, candidate_cell* 
 		CandidateCells[LabelIndex].Center.X /= (f32)Size;
 		CandidateCells[LabelIndex].Center.Y /= (f32)Size;
 	}
+}
+
+void
+CellTrackerInit(cell_tracker* CellTracker, candidate_cell* Cell, u32 StateIndex, u32 StateCount)
+{
+	CellTracker->KalmanFilter.init(4, 2, 0);
+
+	cv::setIdentity(CellTracker->KalmanFilter.transitionMatrix);
+	CellTracker->KalmanFilter.transitionMatrix.at<f32>(0, 2) = 1.f;
+	CellTracker->KalmanFilter.transitionMatrix.at<f32>(1, 3) = 1.f;
+
+	CellTracker->KalmanFilter.statePre.setTo(0.f);
+	CellTracker->KalmanFilter.statePre.at<f32>(0) = Cell->Center.X;
+	CellTracker->KalmanFilter.statePre.at<f32>(1) = Cell->Center.Y;
+
+	CellTracker->KalmanFilter.statePost.setTo(0.f);
+	CellTracker->KalmanFilter.statePost.at<f32>(0) = Cell->Center.X;
+	CellTracker->KalmanFilter.statePost.at<f32>(1) = Cell->Center.Y;
+
+	cv::setIdentity(CellTracker->KalmanFilter.measurementMatrix);
+	cv::setIdentity(CellTracker->KalmanFilter.processNoiseCov, cv::Scalar::all(0.001f));
+	cv::setIdentity(CellTracker->KalmanFilter.measurementNoiseCov, cv::Scalar::all(0.1f));
+	cv::setIdentity(CellTracker->KalmanFilter.errorCovPost, cv::Scalar::all(0.1f));
+
+	u32 PredictedPositionsSize = StateCount * SizeOf(v2);
+	CellTracker->PredictedPositions = (v2*)AllocateMemory(PredictedPositionsSize);
+	MemoryZero(CellTracker->PredictedPositions, PredictedPositionsSize);
+
+	u32 EstimatedPositionsSize = StateCount * SizeOf(v2);
+	CellTracker->EstimatedPositions = (v2*)AllocateMemory(EstimatedPositionsSize);
+	MemoryZero(CellTracker->EstimatedPositions, EstimatedPositionsSize);
+
+	u32 ActualPositionsSize = StateCount * SizeOf(v2);
+	CellTracker->ActualPositions = (v2*)AllocateMemory(ActualPositionsSize);
+	MemoryZero(CellTracker->ActualPositions, ActualPositionsSize);
+
+	u32 BoundingBoxesSize = StateCount * SizeOf(rect_i32);
+	CellTracker->BoundingBoxes = (rect_i32*)AllocateMemory(BoundingBoxesSize);
+	MemoryZero(CellTracker->BoundingBoxes, BoundingBoxesSize);
+
+	u32 SizesSize = StateCount * SizeOf(f32);
+	CellTracker->Sizes = (f32*)AllocateMemory(SizesSize);
+	MemoryZero(CellTracker->Sizes, SizesSize);
+
+	CellTracker->ActualPositions[StateIndex] = Cell->Center;
+	CellTracker->Sizes[StateIndex] = Cell->WeightedSize;
+
+	CellTracker->StateCount = StateCount;
+}
+
+void
+CellTrackerDestroy(cell_tracker* CellTracker)
+{
+	FreeMemory(CellTracker->PredictedPositions);
+	FreeMemory(CellTracker->EstimatedPositions);
+	FreeMemory(CellTracker->ActualPositions);
+	FreeMemory(CellTracker->BoundingBoxes);
+	FreeMemory(CellTracker->Sizes);
+}
+
+v2
+CellTrackerPredict(cell_tracker* CellTracker, u32 StateIndex)
+{
+	Assert(StateIndex > 0 && StateIndex < CellTracker->StateCount);
+
+	image Prediction = CellTracker->KalmanFilter.predict();
+	v2 PredictedPoint = {Prediction.at<f32>(0), Prediction.at<f32>(1)};
+	CellTracker->PredictedPositions[StateIndex] = PredictedPoint;
+	return PredictedPoint;
+}
+
+v2
+CellTrackerCorrect(cell_tracker* CellTracker, u32 StateIndex, analyzed_candidate_cell* Cell)
+{
+	Assert(StateIndex > 0 && StateIndex < CellTracker->StateCount);
+
+	image Correction = ImageF32(2, 1);
+	Correction.at<f32>(0) = (Cell) ? Cell->CandidateCell->Center.X : CellTracker->ActualPositions[StateIndex - 1].X;
+	Correction.at<f32>(1) = (Cell) ? Cell->CandidateCell->Center.Y : CellTracker->ActualPositions[StateIndex - 1].Y;
+	
+	image Estimate = CellTracker->KalmanFilter.correct(Correction);
+	v2 EstimatedPoint = {Estimate.at<f32>(0), Estimate.at<f32>(1)};
+	CellTracker->EstimatedPositions[StateIndex] = EstimatedPoint;
+
+	CellTracker->ActualPositions[StateIndex] = (Cell) ? Cell->CandidateCell->Center : EstimatedPoint;
+	CellTracker->Sizes[StateIndex] = (Cell) ? Cell->CandidateCell->WeightedSize : CellTracker->Sizes[StateIndex - 1];
+	if (Cell)
+	{
+		CellTracker->BoundingBoxes[StateIndex] = Cell->CandidateCell->BoundingBox;
+	}
+
+	return EstimatedPoint;
+}
+
+inline f32
+CellTrackerLastSize(cell_tracker* CellTracker, u32 StateIndex)
+{
+	Assert(StateIndex > 0 && StateIndex < CellTracker->StateCount);
+	f32 Result = CellTracker->Sizes[StateIndex - 1];
+	Assert(Result > 0.f);
+	return Result;
 }

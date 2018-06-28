@@ -237,15 +237,8 @@ Dictymaze()
 	u32 FrameTime = 33;
 	u32 ImageIndex = 165;//101;
 
-	cv::KalmanFilter KF(4, 2, 0);
-	std::vector<v2> Predictions;
-	std::vector<v2> Estimations;
-	std::vector<v2> Actual;
-	f32 LastSize = 0.f;
-	b32 DrawCell = false;
-
-	u32 CellsTrackingCount = 0;
-	u32 CellsTrackingMax = 1;
+	u32 CellTrackerCount = 0;
+	cell_tracker CellTrackers[CELL_TRACKER_MAX] = {};
 	while (Running)
 	{
 		// image* Image = GetImage(&ImageSet, ImageIndex);
@@ -319,6 +312,7 @@ Dictymaze()
 		image CandidateCellLabels = ImageI32(&Cells);
 		u32 CandidateCellCount = ConnectedComponents(&Cells, &CandidateCellLabels) - 1;
 		
+		// NOTE(alex): Tracking
 		if (CandidateCellCount > 0)
 		{
 			candidate_cell* CandidateCells = (candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(candidate_cell));
@@ -327,11 +321,10 @@ Dictymaze()
 			Sort(CandidateCells, candidate_cell, CandidateCellCount, CompareCandidateCells);
 
 			analyzed_candidate_cell* AnalyzedCandidateCells = (analyzed_candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(analyzed_candidate_cell));
-			for (u32 CellsTrackingIndex = 0; CellsTrackingIndex < CellsTrackingCount; ++CellsTrackingIndex)
+			for (u32 CellTrackerIndex = 0; CellTrackerIndex < CellTrackerCount; ++CellTrackerIndex)
 			{
-				image Prediction = KF.predict();
-				v2 PredictedPoint = {Prediction.at<f32>(0), Prediction.at<f32>(1)};
-				Predictions.push_back(PredictedPoint);
+				cell_tracker* CellTracker = CellTrackers + CellTrackerIndex;
+				v2 PredictedPoint = CellTrackerPredict(CellTracker, ImageIndex);
 
 				for (i32 CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
 				{
@@ -341,16 +334,20 @@ Dictymaze()
 					f32 DistanceSqrToPrediction = Dot(CenterToPrediction, CenterToPrediction);
 
 					// TODO(alex): angle this
+					// TODO(alex): extract constants
 					f32 DirectionScore = 0.f;
 					if (CenterToPrediction.X > 0.f)
 					{
 						DirectionScore = 1.f;
 					}
-					else if (CenterToPrediction.X > -32.f)
+					else if (CenterToPrediction.X > -16.f)
 					{
-						DirectionScore = (32.f - CenterToPrediction.X) / 32.f;
+						DirectionScore = (16.f - CenterToPrediction.X) / 16.f;
 					}
+
 					f32 DistanceScore = (DistanceSqrToPrediction <= 625.f) ? ((625.f - DistanceSqrToPrediction) / 625.f) : 0.f;
+					
+					f32 LastSize = CellTrackerLastSize(CellTracker, ImageIndex);
 					f32 SizeScore = 0.f;
 					if (CandidateCell->WeightedSize > 32.f)
 					{
@@ -367,70 +364,20 @@ Dictymaze()
 				Sort(AnalyzedCandidateCells, analyzed_candidate_cell, CandidateCellCount, CompareAnalyzedCandidateCells);
 
 				f32 TopScore = AnalyzedCandidateCells[0].Score;
-				if (TopScore > 0.f)
-				{
-					DrawCell = true;
-
-					candidate_cell* TopScoreCandidateCell = AnalyzedCandidateCells[0].CandidateCell;
-					Actual.push_back(TopScoreCandidateCell->Center);
-
-					image Correction = ImageF32(2, 1);
-					Correction.at<f32>(0) = TopScoreCandidateCell->Center.X;
-					Correction.at<f32>(1) = TopScoreCandidateCell->Center.Y;
-					image Estimate = KF.correct(Correction);
-					v2 EstimatedPoint = {Estimate.at<f32>(0), Estimate.at<f32>(1)};
-					Estimations.push_back(EstimatedPoint);
-
-					LastSize = TopScoreCandidateCell->WeightedSize;
-				}
-				else
-				{
-					DrawCell = false;
-
-					image Correction = ImageF32(2, 1);
-					Correction.at<f32>(0) = Actual[Actual.size() - 1].X;
-					Correction.at<f32>(1) = Actual[Actual.size() - 1].Y;
-					image Estimate = KF.correct(Correction);
-					v2 EstimatedPoint = {Estimate.at<f32>(0), Estimate.at<f32>(1)};
-					Estimations.push_back(EstimatedPoint);
-
-					Actual.push_back(EstimatedPoint);
-				}
+				CellTrackerCorrect(CellTracker, ImageIndex, (TopScore > 0.f) ? AnalyzedCandidateCells + 0 : 0);
 			}
 
 			// NOTE(alex): start tracking new cells
-			if (CellsTrackingCount < CellsTrackingMax)
+			if (CellTrackerCount < CELL_TRACKER_MAX)
 			{
 				b32 ProbableCellDetected = (ThresholdValue < 90) && (CandidateCells[0].WeightedSize >= 256.f);
-
 				if (ProbableCellDetected)
 				{
-					candidate_cell Cell = CandidateCells[0];
-
-					cv::setIdentity(KF.transitionMatrix);
-					KF.transitionMatrix.at<f32>(0, 2) = 1.f;
-					KF.transitionMatrix.at<f32>(1, 3) = 1.f;
-
-					KF.statePre.setTo(0.f);
-					KF.statePre.at<f32>(0) = Cell.Center.X;
-					KF.statePre.at<f32>(1) = Cell.Center.Y;
-
-					KF.statePost.setTo(0.f);
-					KF.statePost.at<f32>(0) = Cell.Center.X;
-					KF.statePost.at<f32>(1) = Cell.Center.Y;
-
-					cv::setIdentity(KF.measurementMatrix);
-					cv::setIdentity(KF.processNoiseCov, cv::Scalar::all(0.001f));
-					cv::setIdentity(KF.measurementNoiseCov, cv::Scalar::all(0.1f));
-					cv::setIdentity(KF.errorCovPost, cv::Scalar::all(0.1f));
-
-					LastSize = Cell.WeightedSize;
-
-					++CellsTrackingCount;
+					CellTrackerInit(CellTrackers + CellTrackerCount, CandidateCells + 0, ImageIndex, IMAGE_SET_SIZE);
+					++CellTrackerCount;
 				}
 			}
 
-			// Draw
 			image OutputCells = ImageU8C3(&Cells);
 			for (i32 Row = 0; Row < Cells.rows; ++Row)
 			{
@@ -443,36 +390,60 @@ Dictymaze()
 				}
 			}
 
-			if (DrawCell)
+			for (u32 CellTrackerIndex = 0; CellTrackerIndex < CellTrackerCount; ++CellTrackerIndex)
 			{
-				for (i32 CellIndex = 0; CellIndex < CellsTrackingCount; ++CellIndex)
+				cell_tracker* CellTracker = CellTrackers + CellTrackerIndex;
+				cv::Scalar Color(HighlightColors[CellTrackerIndex].B, HighlightColors[CellTrackerIndex].G, HighlightColors[CellTrackerIndex].R);
+
+				rect_i32 CellBounds = CellTracker->BoundingBoxes[ImageIndex];
+				if (CellBounds.TopLeft.X)
 				{
-					candidate_cell* Cell = AnalyzedCandidateCells[CellIndex].CandidateCell;
-
-					cv::Scalar Color(HighlightColors[CellIndex].B, HighlightColors[CellIndex].G, HighlightColors[CellIndex].R);
-					cv::rectangle(OutputCells, {Cell->TopLeft.X - 1, Cell->TopLeft.Y - 1}, {Cell->BottomRight.X + 1, Cell->BottomRight.Y + 1}, Color);
+					cv::rectangle(OutputCells, {CellBounds.TopLeft.X - 1, CellBounds.TopLeft.Y - 1}, {CellBounds.BottomRight.X + 1, CellBounds.BottomRight.Y + 1}, Color);
 				}
-			}
 
-			for (i32 PointIndex = 1; PointIndex < Predictions.size(); ++PointIndex)
-			{
-				v2 PrevActualPoint = Actual[PointIndex - 1];
-				v2 ActualPoint = Actual[PointIndex];
-				cv::line(OutputCells, {(i32)PrevActualPoint.X, (i32)PrevActualPoint.Y}, {(i32)ActualPoint.X, (i32)ActualPoint.Y}, cv::Scalar(255, 0, 0));
+				for (u32 StateIndex = 1; StateIndex < CellTracker->StateCount; ++StateIndex)
+				{
+					/*v2 PrevPred = CellTracker->PredictedPositions[StateIndex - 1];
+					v2 CurrPred = CellTracker->PredictedPositions[StateIndex];
 
-				v2 PrevPredictionPoint = Predictions[PointIndex - 1];
-				v2 PredictionPoint = Predictions[PointIndex];
-				cv::line(OutputCells, {(i32)PrevPredictionPoint.X, (i32)PrevPredictionPoint.Y}, {(i32)PredictionPoint.X, (i32)PredictionPoint.Y}, cv::Scalar(0, 0, 255));
+					if (PrevPred.X && CurrPred.X)
+					{
+						cv::line(OutputCells, {(i32)PrevPred.X, (i32)PrevPred.Y}, {(i32)CurrPred.X, (i32)CurrPred.Y}, Color);
+					}*/
 
-				v2 PrevEstimatedPoint = Estimations[PointIndex - 1];
-				v2 EstimatedPoint = Estimations[PointIndex];
-				cv::line(OutputCells, {(i32)PrevEstimatedPoint.X, (i32)PrevEstimatedPoint.Y}, {(i32)EstimatedPoint.X, (i32)EstimatedPoint.Y}, cv::Scalar(0, 255, 0));
+					v2 PrevEsti = CellTracker->EstimatedPositions[StateIndex - 1];
+					v2 CurrEsti = CellTracker->EstimatedPositions[StateIndex];
+
+					if (PrevEsti.X && CurrEsti.X)
+					{
+						cv::line(OutputCells, {(i32)PrevEsti.X, (i32)PrevEsti.Y}, {(i32)CurrEsti.X, (i32)CurrEsti.Y}, Color);
+					}
+
+					/*v2 PrevActu = CellTracker->ActualPositions[StateIndex - 1];
+					v2 CurrActu = CellTracker->ActualPositions[StateIndex];
+
+					if (PrevActu.X && CurrActu.X)
+					{
+						cv::line(OutputCells, {(i32)PrevActu.X, (i32)PrevActu.Y}, {(i32)CurrActu.X, (i32)CurrActu.Y}, Color);
+					}*/
+				}
 			}
 
 			ShowImage("Cells", &OutputCells);
 
 			FreeOnStackSafe(CandidateCells);
 			FreeOnStackSafe(AnalyzedCandidateCells);
+		}
+		else
+		{
+			for (u32 CellTrackerIndex = 0; CellTrackerIndex < CellTrackerCount; ++CellTrackerIndex)
+			{
+				cell_tracker* CellTracker = CellTrackers + CellTrackerIndex;
+				CellTracker->PredictedPositions[ImageIndex] = CellTracker->PredictedPositions[ImageIndex - 1];
+				CellTracker->EstimatedPositions[ImageIndex] = CellTracker->EstimatedPositions[ImageIndex - 1];
+				CellTracker->ActualPositions[ImageIndex] = CellTracker->ActualPositions[ImageIndex - 1];
+				CellTracker->Sizes[ImageIndex] = CellTracker->Sizes[ImageIndex - 1];
+			}
 		}
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
@@ -506,11 +477,12 @@ Dictymaze()
 			case -1:
 			{
 				u32 NewImageIndex = NextImageIndex(ImageIndex);
-				ImageIndex = NewImageIndex;
 				if (NewImageIndex < ImageIndex)
 				{
 					Paused = true;
 				}
+				ImageIndex = NewImageIndex;
+
 			} break;
 			default: 
 			{

@@ -14,7 +14,8 @@ AllocateOnStack(size Size)
 void*
 AllocateOnStackSafe(size Size)
 {
-	return _malloca(Size);
+	void* Result = _malloca(Size);
+    return Result;
 }
 
 void
@@ -33,6 +34,19 @@ void
 MakeDirectory(char* PathName)
 {
 	CreateDirectory(PathName, 0);
+}
+
+void*
+AllocateMemory(size Size)
+{
+    void* Result = malloc(Size);
+    return Result;
+}
+
+void
+FreeMemory(void* Buffer)
+{
+    free(Buffer);
 }
 
 int CALLBACK WinMain(

@@ -37,6 +37,12 @@ FreeOnStackSafe(void* Buffer);
 void
 MemoryZero(void* Buffer, size Length);
 
+void*
+AllocateMemory(size Size);
+
+void
+FreeMemory(void* Buffer);
+
 void
 MakeDirectory(char* PathName);
 
