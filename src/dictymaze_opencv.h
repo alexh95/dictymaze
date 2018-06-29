@@ -74,12 +74,8 @@ struct candidate_cell
 	v2 Center;
 	u32 Size;
 	f32 WeightedSize;
-};
-
-struct analyzed_candidate_cell
-{
-	candidate_cell* CandidateCell;
-	f32 Score;
+	f32* Scores;
+	u32 ScoreCount;
 };
 
 struct cell_tracker
@@ -91,6 +87,13 @@ struct cell_tracker
 	rect_i32* BoundingBoxes;
 	f32* Sizes;
 	u32 StateCount;
+};
+
+struct cell_ranking
+{
+	u32 CellTrackerIndex;
+	u32 CandidateCellIndex;
+	f32 Score;
 };
 
 #define DICTYMAZE_OPENCV_H

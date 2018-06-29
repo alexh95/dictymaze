@@ -25,23 +25,14 @@ typedef size_t size;
 
 #define SizeOf(Size) sizeof(Size)
 
-void*
-AllocateOnStack(size Size);
-
-void*
-AllocateOnStackSafe(size Size);
-
-void
-FreeOnStackSafe(void* Buffer);
-
 void
 MemoryZero(void* Buffer, size Length);
 
 void*
-AllocateMemory(size Size);
+MemoryAllocate(size Size);
 
 void
-FreeMemory(void* Buffer);
+MemoryFree(void* Buffer);
 
 void
 MakeDirectory(char* PathName);

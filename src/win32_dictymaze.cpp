@@ -6,22 +6,16 @@
 #include <windows.h>
 
 void*
-AllocateOnStack(size Size)
+MemoryAllocate(size Size)
 {
-    return _alloca(Size);
-}
-
-void*
-AllocateOnStackSafe(size Size)
-{
-	void* Result = _malloca(Size);
+    void* Result = malloc(Size);
     return Result;
 }
 
 void
-FreeOnStackSafe(void* Buffer)
+MemoryFree(void* Buffer)
 {
-	_freea(Buffer);
+    free(Buffer);
 }
 
 void
@@ -34,19 +28,6 @@ void
 MakeDirectory(char* PathName)
 {
 	CreateDirectory(PathName, 0);
-}
-
-void*
-AllocateMemory(size Size)
-{
-    void* Result = malloc(Size);
-    return Result;
-}
-
-void
-FreeMemory(void* Buffer)
-{
-    free(Buffer);
 }
 
 int CALLBACK WinMain(

@@ -190,14 +190,14 @@ ExtractMaze(image* Src, image* Maze)
 }
 
 inline b32
-CompareCandidateCells(candidate_cell* A, candidate_cell* B)
+CompareCandidateCellsByWeightedSize(candidate_cell* A, candidate_cell* B)
 {
 	b32 Result = A->WeightedSize < B->WeightedSize;
 	return Result;
 }
 
 inline b32
-CompareAnalyzedCandidateCells(analyzed_candidate_cell* A, analyzed_candidate_cell* B)
+CompareCellRanking(cell_ranking* A, cell_ranking* B)
 {
 	b32 Result = A->Score < B->Score;
 	return Result;
@@ -218,8 +218,8 @@ Dictymaze()
 	char OutputWindowName1[] = "Output 1";
 	CreateWindow(OutputWindowName1);
 
-	char OutputWindowName2[] = "Output 2";
-	CreateWindow(OutputWindowName2);
+/*	char OutputWindowName2[] = "Output 2";
+	CreateWindow(OutputWindowName2);*/
 
 #if DRAW_HISTOGRAMS
 	char HistogramWindowName1[] = "Histogram 1";
@@ -235,7 +235,7 @@ Dictymaze()
 	b32 Running = true;
 	b32 Paused = true;
 	u32 FrameTime = 33;
-	u32 ImageIndex = 165;//101;
+	u32 ImageIndex = 165;
 
 	u32 CellTrackerCount = 0;
 	cell_tracker CellTrackers[CELL_TRACKER_MAX] = {};
@@ -307,23 +307,46 @@ Dictymaze()
 #endif
 
 		Threshold(&Cells, &Cells, ThresholdValue);
-		ShowImage(OutputWindowName2, &Cells);
+		// ShowImage(OutputWindowName2, &Cells);
+		/*char O1Name[256] = {};
+		sprintf(O1Name, "data\\Output\\Thresholded_%d.png", ImageIndex);
+		cv::imwrite(O1Name, Cells);*/
+
+		image OutputCells = ImageU8C3(&Cells);
+		for (i32 Row = 0; Row < Cells.rows; ++Row)
+		{
+			for (i32 Col = 0; Col < Cells.cols; ++Col)
+			{
+				point_i32 Point = {Col, Row};
+				u8 Value = GetAtU8(&Cells, Point);
+				pixel_rgb Pixel = {Value, Value, Value};
+				SetAtU8C3(&OutputCells, Point, Pixel);
+			}
+		}
 
 		image CandidateCellLabels = ImageI32(&Cells);
 		u32 CandidateCellCount = ConnectedComponents(&Cells, &CandidateCellLabels) - 1;
-		
+
 		// NOTE(alex): Tracking
 		if (CandidateCellCount > 0)
 		{
-			candidate_cell* CandidateCells = (candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(candidate_cell));
+			candidate_cell* CandidateCells = (candidate_cell*)MemoryAllocate(CandidateCellCount * SizeOf(candidate_cell));
 			ExtractCandidateCells(&Cells, &CandidateCellLabels, CandidateCells, CandidateCellCount);
 
-			Sort(CandidateCells, candidate_cell, CandidateCellCount, CompareCandidateCells);
+			for (i32 CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
+			{
+				candidate_cell* CandidateCell = CandidateCells + CandidateCellIndex;
+				CandidateCell->Scores = (f32*)MemoryAllocate(CellTrackerCount * SizeOf(f32));
+				CandidateCell->ScoreCount = CellTrackerCount;
+			}
 
-			analyzed_candidate_cell* AnalyzedCandidateCells = (analyzed_candidate_cell*)AllocateOnStackSafe(CandidateCellCount * SizeOf(analyzed_candidate_cell));
+			Sort(CandidateCells, candidate_cell, CandidateCellCount, CompareCandidateCellsByWeightedSize);
+
+			// NOTE(alex): compute scores
 			for (u32 CellTrackerIndex = 0; CellTrackerIndex < CellTrackerCount; ++CellTrackerIndex)
 			{
 				cell_tracker* CellTracker = CellTrackers + CellTrackerIndex;
+
 				v2 PredictedPoint = CellTrackerPredict(CellTracker, ImageIndex);
 
 				for (i32 CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
@@ -340,12 +363,12 @@ Dictymaze()
 					{
 						DirectionScore = 1.f;
 					}
-					else if (CenterToPrediction.X > -16.f)
+					else if (CenterToPrediction.X > -24.f)
 					{
-						DirectionScore = (16.f - CenterToPrediction.X) / 16.f;
+						DirectionScore = (24.f - CenterToPrediction.X) / 24.f;
 					}
 
-					f32 DistanceScore = (DistanceSqrToPrediction <= 625.f) ? ((625.f - DistanceSqrToPrediction) / 625.f) : 0.f;
+					f32 DistanceScore = (DistanceSqrToPrediction <= 900.f) ? ((900.f - DistanceSqrToPrediction) / 900.f) : 0.f;
 					
 					f32 LastSize = CellTrackerLastSize(CellTracker, ImageIndex);
 					f32 SizeScore = 0.f;
@@ -356,39 +379,142 @@ Dictymaze()
 
 					f32 Score = DirectionScore * DistanceScore * SizeScore;
 
-					analyzed_candidate_cell* AnalyzedCandidateCell = AnalyzedCandidateCells + CandidateCellIndex;
-					AnalyzedCandidateCell->CandidateCell = CandidateCell;
-					AnalyzedCandidateCell->Score = Score;
+					CandidateCell->Scores[CellTrackerIndex] = Score;
+				}
+			}
+
+			// NOTE(alex): sort rankings
+			u32 CellRankingCount = CellTrackerCount * CandidateCellCount;
+			cell_ranking* CellRankings = (cell_ranking*)MemoryAllocate(CellRankingCount * SizeOf(cell_ranking));
+			for (u32 CellTrackerIndex = 0; CellTrackerIndex < CellTrackerCount; ++CellTrackerIndex)
+			{
+				cell_tracker* CellTracker = CellTrackers + CellTrackerIndex;
+				
+				for (i32 CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
+				{
+					candidate_cell* CandidateCell = CandidateCells + CandidateCellIndex;
+
+					cell_ranking* CellRanking = CellRankings + CellTrackerIndex * CandidateCellCount + CandidateCellIndex;
+					CellRanking->CellTrackerIndex = CellTrackerIndex;
+					CellRanking->CandidateCellIndex = CandidateCellIndex;
+					CellRanking->Score = CandidateCell->Scores[CellTrackerIndex];
+				}
+			}
+			Sort(CellRankings, cell_ranking, CellRankingCount, CompareCellRanking);
+
+			// NOTE(alex): select best ranking prediction and apply correction
+			cell_ranking** SelectedCellRankings = (cell_ranking**)MemoryAllocate(CellTrackerCount * SizeOf(cell_ranking*));
+			u32 SelectedCellRankingCount = 0;
+			u32 SelectionDryRuns = 0;
+			while ((SelectedCellRankingCount + SelectionDryRuns) < CellTrackerCount)
+			{
+				// NOTE(alex): select the top score
+				b32 SelectedCell = false;
+				cell_ranking* CellRankingMaxScore = CellRankings;
+				for (u32 CellRankingIndex = 0; CellRankingIndex < CellRankingCount; ++CellRankingIndex)
+				{
+					cell_ranking* CellRanking = CellRankings + CellRankingIndex;
+
+					if (CellRanking->Score >= CellRankingMaxScore->Score)
+					{
+						b32 CellIndexUnused = true;
+						for (u32 SelectedCellRankingIndex = 0; SelectedCellRankingIndex < SelectedCellRankingCount; ++SelectedCellRankingIndex)
+						{
+							if (SelectedCellRankings[SelectedCellRankingIndex]->CellTrackerIndex == CellRanking->CellTrackerIndex ||
+								SelectedCellRankings[SelectedCellRankingIndex]->CandidateCellIndex == CellRanking->CandidateCellIndex)
+							{
+								CellIndexUnused = false;
+								break;
+							}
+						}
+
+						if (CellIndexUnused)
+						{
+							SelectedCell = true;
+							CellRankingMaxScore = CellRanking;
+							break;
+						}
+					}
 				}
 
-				Sort(AnalyzedCandidateCells, analyzed_candidate_cell, CandidateCellCount, CompareAnalyzedCandidateCells);
-
-				f32 TopScore = AnalyzedCandidateCells[0].Score;
-				CellTrackerCorrect(CellTracker, ImageIndex, (TopScore > 0.f) ? AnalyzedCandidateCells + 0 : 0);
+				if (SelectedCell)
+				{
+					SelectedCellRankings[SelectedCellRankingCount++] = CellRankingMaxScore;
+					cell_tracker* CellTracker = CellTrackers + CellRankingMaxScore->CellTrackerIndex;
+					candidate_cell* CandidateCell = (CellRankingMaxScore->Score > 0.f) ? CandidateCells + CellRankingMaxScore->CandidateCellIndex : 0;
+					CellTrackerCorrect(CellTracker, ImageIndex, CandidateCell);
+				}
+				else
+				{
+					++SelectionDryRuns;
+				}
+			}
+			// NOTE(alex): correct the unmatched trackers
+			for (u32 CellTrackerIndex = 0; CellTrackerIndex < CellTrackerCount; ++CellTrackerIndex)
+			{
+				cell_tracker* CellTracker = CellTrackers + CellTrackerIndex;
+				if (CellTracker->Sizes[ImageIndex] == 0)
+				{
+					CellTrackerCorrect(CellTracker, ImageIndex, 0);
+				}
 			}
 
 			// NOTE(alex): start tracking new cells
-			if (CellTrackerCount < CELL_TRACKER_MAX)
+			if (CellTrackerCount < CELL_TRACKER_MAX && ThresholdValue <= 80)
 			{
-				b32 ProbableCellDetected = (ThresholdValue < 90) && (CandidateCells[0].WeightedSize >= 256.f);
-				if (ProbableCellDetected)
+				u32 UsedCandidateCells[CELL_TRACKER_MAX] = {};
+				u32 UsedCandidateCellCount = 0;
+				b32 OptionsNotExhausted = true;
+				while (CellTrackerCount < CELL_TRACKER_MAX && OptionsNotExhausted)
 				{
-					CellTrackerInit(CellTrackers + CellTrackerCount, CandidateCells + 0, ImageIndex, IMAGE_SET_SIZE);
-					++CellTrackerCount;
-				}
-			}
+					u32 CandidateCellIndex;
+					for (CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
+					{
+						candidate_cell* CandidateCell = CandidateCells + CandidateCellIndex;
 
-			image OutputCells = ImageU8C3(&Cells);
-			for (i32 Row = 0; Row < Cells.rows; ++Row)
-			{
-				for (i32 Col = 0; Col < Cells.cols; ++Col)
-				{
-					point_i32 Point = {Col, Row};
-					u8 Value = GetAtU8(&Cells, Point);
-					pixel_rgb Pixel = {Value, Value, Value};
-					SetAtU8C3(&OutputCells, Point, Pixel);
+						if (CandidateCell->WeightedSize >= 200.f)
+						{
+							b32 CellUntracked = true;
+							for (u32 SelectedCellRankingIndex = 0; SelectedCellRankingIndex < SelectedCellRankingCount; ++SelectedCellRankingIndex)
+							{
+								if (SelectedCellRankings[SelectedCellRankingIndex]->CandidateCellIndex == CandidateCellIndex)
+								{
+									CellUntracked = false;
+									break;
+								}
+							}
+
+							if (CellUntracked)
+							{
+								b32 CellUnused = true;
+								for (u32 UsedCandidateCellIndex = 0; UsedCandidateCellIndex < UsedCandidateCellCount; ++UsedCandidateCellIndex)
+								{
+									if (UsedCandidateCells[UsedCandidateCellIndex] == CandidateCellIndex)
+									{
+										CellUnused = false;
+										break;
+									}
+								}
+
+								if (CellUnused)
+								{
+									cell_tracker* CellTracker = CellTrackers + CellTrackerCount;
+									CellTrackerInit(CellTracker, CandidateCell, ImageIndex, IMAGE_SET_SIZE);
+									++CellTrackerCount;
+									UsedCandidateCells[UsedCandidateCellCount++] = CandidateCellIndex;
+									break;
+								}
+							}
+						}
+					}
+					if (CandidateCellIndex >= CandidateCellCount - 1)
+					{
+						OptionsNotExhausted = false;
+					}
 				}
 			}
+			MemoryFree(SelectedCellRankings);
+			MemoryFree(CellRankings);
 
 			for (u32 CellTrackerIndex = 0; CellTrackerIndex < CellTrackerCount; ++CellTrackerIndex)
 			{
@@ -430,9 +556,13 @@ Dictymaze()
 			}
 
 			ShowImage("Cells", &OutputCells);
-
-			FreeOnStackSafe(CandidateCells);
-			FreeOnStackSafe(AnalyzedCandidateCells);
+			
+			for (i32 CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
+			{
+				candidate_cell* CandidateCell = CandidateCells + CandidateCellIndex;
+				MemoryFree(CandidateCell->Scores);
+			}
+			MemoryFree(CandidateCells);
 		}
 		else
 		{
@@ -445,6 +575,10 @@ Dictymaze()
 				CellTracker->Sizes[ImageIndex] = CellTracker->Sizes[ImageIndex - 1];
 			}
 		}
+
+		/*char CellsName[256] = {};
+		sprintf(CellsName, "data\\Output\\Cells_%d.png", ImageIndex);
+		cv::imwrite(CellsName, OutputCells);*/
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)

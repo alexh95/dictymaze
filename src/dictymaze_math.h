@@ -10,8 +10,9 @@
 
 #define Sqr(A) ((A) * (A))
 
+// TODO(alex): use select sort
 #define Sort(Array, Type, Size, Comparator)\
-for (u32 Index1 = 0; Index1 < Size - 1; ++Index1)\
+for (u32 Index1 = 0; Index1 < Size; ++Index1)\
 {\
 	for (u32 Index2 = Index1 + 1; Index2 < Size; ++Index2)\
 	{\

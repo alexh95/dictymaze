@@ -342,7 +342,7 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 {
 	Assert(Src->data && Dst->data);
 	// TODO(alex): prevent stack overflow
-	image_object* Objects = (image_object*)AllocateOnStackSafe((LabelCount + 1) * SizeOf(image_object));
+	image_object* Objects = (image_object*)MemoryAllocate((LabelCount + 1) * SizeOf(image_object));
 	for (u32 Label = 0; Label <= LabelCount; ++Label)
 	{
 		Objects[Label].Label = Label;
@@ -369,7 +369,7 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 			++LargeObjectCount;
 		}
 	}
-	image_object* LargeObjects = (image_object*)AllocateOnStackSafe(LargeObjectCount * SizeOf(image_object));
+	image_object* LargeObjects = (image_object*)MemoryAllocate(LargeObjectCount * SizeOf(image_object));
 	u32 LargeObjectIndex = 0;
 	for (u32 ObjectIndex = 0; ObjectIndex <= LabelCount; ++ObjectIndex)
 	{
@@ -378,7 +378,7 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 			LargeObjects[LargeObjectIndex++] = Objects[ObjectIndex];
 		}
 	}
-	FreeOnStackSafe(Objects);
+	MemoryFree(Objects);
 
 	for (u32 ObjectIndex1 = 0; ObjectIndex1 < LargeObjectCount; ++ObjectIndex1)
 	{
@@ -393,13 +393,13 @@ ExtractLargestLabeledFeatures(image* Src, image* Dst, image* Labels, u32 LabelCo
 		}
 	}
 
-	u8* LabelValue = (u8*)AllocateOnStackSafe(LabelCount + 1);
+	u8* LabelValue = (u8*)MemoryAllocate(LabelCount + 1);
 	MemoryZero(LabelValue, LabelCount + 1);
 	for (u32 ObjectIndex = 0; ObjectIndex < MaxObjectCount; ++ObjectIndex)
 	{
 		LabelValue[LargeObjects[ObjectIndex].Label] = 255;
 	}
-	FreeOnStackSafe(LargeObjects);
+	MemoryFree(LargeObjects);
 
 	u32 ObjectsDeleted = LabelCount - MaxObjectCount;
 	if (ObjectsDeleted > 0)
@@ -459,8 +459,8 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 		i32 LevelRows = Temp.rows / Level;
 		i32 LevelCols = Temp.cols / Level;
 
-		f64* RowData = (f64*)AllocateOnStackSafe(LevelCols * SizeOf(f64));
-		f64* TransformRowData = (f64*)AllocateOnStackSafe(LevelCols * SizeOf(f64));
+		f64* RowData = (f64*)MemoryAllocate(LevelCols * SizeOf(f64));
+		f64* TransformRowData = (f64*)MemoryAllocate(LevelCols * SizeOf(f64));
 		for (i32 Row = 0; Row < LevelRows; ++Row)
 		{
 			for (i32 Col = 0; Col < LevelCols; ++Col)
@@ -473,11 +473,11 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 				SetAtF64(&Temp, { Col, Row }, TransformRowData[Col]);
 			}
 		}
-		FreeOnStackSafe(TransformRowData);
-		FreeOnStackSafe(RowData);
+		MemoryFree(TransformRowData);
+		MemoryFree(RowData);
 
-		f64* ColData = (f64*)AllocateOnStackSafe(LevelRows * SizeOf(f64));
-		f64* TransformColData = (f64*)AllocateOnStackSafe(LevelRows * SizeOf(f64));
+		f64* ColData = (f64*)MemoryAllocate(LevelRows * SizeOf(f64));
+		f64* TransformColData = (f64*)MemoryAllocate(LevelRows * SizeOf(f64));
 		for (i32 Col = 0; Col < LevelCols; ++Col)
 		{
 			for (i32 Row = 0; Row < LevelRows; ++Row)
@@ -490,8 +490,8 @@ WaveletHaarTransform2D(image* Src, image* Dst, u32 Iterations = 1)
 				SetAtF64(&Temp, { Col, Row }, TransformColData[Row]);
 			}
 		}
-		FreeOnStackSafe(ColData);
-		FreeOnStackSafe(TransformColData);
+		MemoryFree(ColData);
+		MemoryFree(TransformColData);
 	}
 
 	for (i32 Row = 0; Row < Temp.rows; ++Row)
@@ -773,27 +773,30 @@ HistogramDraw(image* Dst, histogram* Histogram, u32 From = 0, u32 To = 256)
 }
 
 void
-ExtractCandidateCells(image* Cells, image* CandidateCellLabels, candidate_cell* CandidateCells, u32 CandidateCellCount)
+ExtractCandidateCells(image* CellsImage, image* CandidateCellLabels, candidate_cell* CandidateCells, u32 CandidateCellCount)
 {
 	for (i32 LabelIndex = 0; LabelIndex < CandidateCellCount; ++LabelIndex)
 	{
-		CandidateCells[LabelIndex].Label = LabelIndex + 1;
-		CandidateCells[LabelIndex].BoundingBox.TopLeft = {Cells->cols, Cells->rows};
-		CandidateCells[LabelIndex].BoundingBox.BottomRight = {};
-		CandidateCells[LabelIndex].Center = {};
-		CandidateCells[LabelIndex].Size = 0;
-		CandidateCells[LabelIndex].WeightedSize = 0.;
+		candidate_cell* CandidateCell = CandidateCells + LabelIndex;
+		CandidateCell->Label = LabelIndex + 1;
+		CandidateCell->BoundingBox.TopLeft = {CellsImage->cols, CellsImage->rows};
+		CandidateCell->BoundingBox.BottomRight = {};
+		CandidateCell->Center = {};
+		CandidateCell->Size = 0;
+		CandidateCell->WeightedSize = 0.;
+		CandidateCell->Scores = 0;
+		CandidateCell->ScoreCount = 0;
 	}
 
-	for (i32 Row = 0; Row < Cells->rows; ++Row)
+	for (i32 Row = 0; Row < CellsImage->rows; ++Row)
 	{
-		for (i32 Col = 0; Col < Cells->cols; ++Col)
+		for (i32 Col = 0; Col < CellsImage->cols; ++Col)
 		{
 			point_i32 Point = {Col, Row};
 			i32 LabelIndex = GetAtI32(CandidateCellLabels, Point) - 1;
 			if (LabelIndex >= 0)
 			{
-				u8 Value = GetAtU8(Cells, Point);
+				u8 Value = GetAtU8(CellsImage, Point);
 
 				if (Row < CandidateCells[LabelIndex].BoundingBox.TopLeft.I)
 				{
@@ -830,7 +833,7 @@ ExtractCandidateCells(image* Cells, image* CandidateCellLabels, candidate_cell* 
 }
 
 void
-CellTrackerInit(cell_tracker* CellTracker, candidate_cell* Cell, u32 StateIndex, u32 StateCount)
+CellTrackerInit(cell_tracker* CellTracker, candidate_cell* CandidateCell, u32 StateIndex, u32 StateCount)
 {
 	CellTracker->KalmanFilter.init(4, 2, 0);
 
@@ -839,12 +842,12 @@ CellTrackerInit(cell_tracker* CellTracker, candidate_cell* Cell, u32 StateIndex,
 	CellTracker->KalmanFilter.transitionMatrix.at<f32>(1, 3) = 1.f;
 
 	CellTracker->KalmanFilter.statePre.setTo(0.f);
-	CellTracker->KalmanFilter.statePre.at<f32>(0) = Cell->Center.X;
-	CellTracker->KalmanFilter.statePre.at<f32>(1) = Cell->Center.Y;
+	CellTracker->KalmanFilter.statePre.at<f32>(0) = CandidateCell->Center.X;
+	CellTracker->KalmanFilter.statePre.at<f32>(1) = CandidateCell->Center.Y;
 
 	CellTracker->KalmanFilter.statePost.setTo(0.f);
-	CellTracker->KalmanFilter.statePost.at<f32>(0) = Cell->Center.X;
-	CellTracker->KalmanFilter.statePost.at<f32>(1) = Cell->Center.Y;
+	CellTracker->KalmanFilter.statePost.at<f32>(0) = CandidateCell->Center.X;
+	CellTracker->KalmanFilter.statePost.at<f32>(1) = CandidateCell->Center.Y;
 
 	cv::setIdentity(CellTracker->KalmanFilter.measurementMatrix);
 	cv::setIdentity(CellTracker->KalmanFilter.processNoiseCov, cv::Scalar::all(0.001f));
@@ -852,39 +855,40 @@ CellTrackerInit(cell_tracker* CellTracker, candidate_cell* Cell, u32 StateIndex,
 	cv::setIdentity(CellTracker->KalmanFilter.errorCovPost, cv::Scalar::all(0.1f));
 
 	u32 PredictedPositionsSize = StateCount * SizeOf(v2);
-	CellTracker->PredictedPositions = (v2*)AllocateMemory(PredictedPositionsSize);
+	CellTracker->PredictedPositions = (v2*)MemoryAllocate(PredictedPositionsSize);
 	MemoryZero(CellTracker->PredictedPositions, PredictedPositionsSize);
 
 	u32 EstimatedPositionsSize = StateCount * SizeOf(v2);
-	CellTracker->EstimatedPositions = (v2*)AllocateMemory(EstimatedPositionsSize);
+	CellTracker->EstimatedPositions = (v2*)MemoryAllocate(EstimatedPositionsSize);
 	MemoryZero(CellTracker->EstimatedPositions, EstimatedPositionsSize);
 
 	u32 ActualPositionsSize = StateCount * SizeOf(v2);
-	CellTracker->ActualPositions = (v2*)AllocateMemory(ActualPositionsSize);
+	CellTracker->ActualPositions = (v2*)MemoryAllocate(ActualPositionsSize);
 	MemoryZero(CellTracker->ActualPositions, ActualPositionsSize);
 
 	u32 BoundingBoxesSize = StateCount * SizeOf(rect_i32);
-	CellTracker->BoundingBoxes = (rect_i32*)AllocateMemory(BoundingBoxesSize);
+	CellTracker->BoundingBoxes = (rect_i32*)MemoryAllocate(BoundingBoxesSize);
 	MemoryZero(CellTracker->BoundingBoxes, BoundingBoxesSize);
 
 	u32 SizesSize = StateCount * SizeOf(f32);
-	CellTracker->Sizes = (f32*)AllocateMemory(SizesSize);
+	CellTracker->Sizes = (f32*)MemoryAllocate(SizesSize);
 	MemoryZero(CellTracker->Sizes, SizesSize);
 
-	CellTracker->ActualPositions[StateIndex] = Cell->Center;
-	CellTracker->Sizes[StateIndex] = Cell->WeightedSize;
+	CellTracker->ActualPositions[StateIndex] = CandidateCell->Center;
+	CellTracker->Sizes[StateIndex] = CandidateCell->WeightedSize;
 
 	CellTracker->StateCount = StateCount;
+	CellTracker->BoundingBoxes[StateIndex] = CandidateCell->BoundingBox;
 }
 
 void
 CellTrackerDestroy(cell_tracker* CellTracker)
 {
-	FreeMemory(CellTracker->PredictedPositions);
-	FreeMemory(CellTracker->EstimatedPositions);
-	FreeMemory(CellTracker->ActualPositions);
-	FreeMemory(CellTracker->BoundingBoxes);
-	FreeMemory(CellTracker->Sizes);
+	MemoryFree(CellTracker->PredictedPositions);
+	MemoryFree(CellTracker->EstimatedPositions);
+	MemoryFree(CellTracker->ActualPositions);
+	MemoryFree(CellTracker->BoundingBoxes);
+	MemoryFree(CellTracker->Sizes);
 }
 
 v2
@@ -899,23 +903,23 @@ CellTrackerPredict(cell_tracker* CellTracker, u32 StateIndex)
 }
 
 v2
-CellTrackerCorrect(cell_tracker* CellTracker, u32 StateIndex, analyzed_candidate_cell* Cell)
+CellTrackerCorrect(cell_tracker* CellTracker, u32 StateIndex, candidate_cell* CandidateCell)
 {
 	Assert(StateIndex > 0 && StateIndex < CellTracker->StateCount);
 
 	image Correction = ImageF32(2, 1);
-	Correction.at<f32>(0) = (Cell) ? Cell->CandidateCell->Center.X : CellTracker->ActualPositions[StateIndex - 1].X;
-	Correction.at<f32>(1) = (Cell) ? Cell->CandidateCell->Center.Y : CellTracker->ActualPositions[StateIndex - 1].Y;
+	Correction.at<f32>(0) = (CandidateCell) ? CandidateCell->Center.X : CellTracker->ActualPositions[StateIndex - 1].X;
+	Correction.at<f32>(1) = (CandidateCell) ? CandidateCell->Center.Y : CellTracker->ActualPositions[StateIndex - 1].Y;
 	
 	image Estimate = CellTracker->KalmanFilter.correct(Correction);
 	v2 EstimatedPoint = {Estimate.at<f32>(0), Estimate.at<f32>(1)};
 	CellTracker->EstimatedPositions[StateIndex] = EstimatedPoint;
 
-	CellTracker->ActualPositions[StateIndex] = (Cell) ? Cell->CandidateCell->Center : EstimatedPoint;
-	CellTracker->Sizes[StateIndex] = (Cell) ? Cell->CandidateCell->WeightedSize : CellTracker->Sizes[StateIndex - 1];
-	if (Cell)
+	CellTracker->ActualPositions[StateIndex] = (CandidateCell) ? CandidateCell->Center : EstimatedPoint;
+	CellTracker->Sizes[StateIndex] = (CandidateCell) ? CandidateCell->WeightedSize : CellTracker->Sizes[StateIndex - 1];
+	if (CandidateCell)
 	{
-		CellTracker->BoundingBoxes[StateIndex] = Cell->CandidateCell->BoundingBox;
+		CellTracker->BoundingBoxes[StateIndex] = CandidateCell->BoundingBox;
 	}
 
 	return EstimatedPoint;
