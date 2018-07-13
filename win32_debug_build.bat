@@ -1,6 +1,6 @@
 @ECHO off 
 
-SET CompilerFlags= /MTd /nologo /EHa- /EHsc- /Z7 /I C:\Libs\opencv\build\include
+SET CompilerFlags= /MTd /nologo /wd4312 /EHa- /EHsc- /Z7 /I C:\Libs\opencv\build\include
 SET LinkerFlags= /incremental:no /opt:ref C:\Libs\opencv\build\x64\vc15\lib\opencv_world341d.lib
 
 IF NOT EXIST build MKDIR build

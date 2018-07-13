@@ -19,6 +19,12 @@ typedef double f64;
 
 typedef size_t size;
 
+struct file
+{
+	void* Handle;
+	u64 Size;
+};
+
 #define Assert(Expression) if (!(Expression)) { *(i32*)0 = 0; }
 
 #define ArrayCount(Array) (sizeof(Array)/(sizeof(Array[0])))
@@ -36,6 +42,12 @@ MemoryFree(void* Buffer);
 
 void
 MakeDirectory(char* PathName);
+
+file
+FileOpen(char* FileName);
+
+u64
+FileRead(file* File, void* Buffer, u64 BytesToRead);
 
 void
 Dictymaze();

@@ -204,19 +204,18 @@ CompareCellRanking(cell_ranking* A, cell_ranking* B)
 }
 
 void
-Dictymaze()
+Dictymaze(dictymaze_parameters* Parameters)
 {
-	char ImageSetName[] = "ax2__52517_2";
-	image_set ImageSet = GetImageSet(ImageSetName, "SourceSplit");
+	image_set ImageSet = GetImageSet(Parameters->ImageSetName, "SourceSplit");
 
 	image_set StabilizedImageSet;
-	if (!GetStabilizedImages(&StabilizedImageSet, ImageSetName))
+	if (!GetStabilizedImages(&StabilizedImageSet, Parameters->ImageSetName))
 	{
 		StabilizeImages(&StabilizedImageSet, &ImageSet);
 	}
 
-	char OutputWindowName1[] = "Output 1";
-	CreateWindow(OutputWindowName1);
+/*	char OutputWindowName1[] = "Output 1";
+	CreateWindow(OutputWindowName1);*/
 
 /*	char OutputWindowName2[] = "Output 2";
 	CreateWindow(OutputWindowName2);*/
@@ -233,12 +232,13 @@ Dictymaze()
 	image CellsHistGradientDisplay = ImageU8(1000, 256 * 4);
 
 	b32 Running = true;
-	b32 Paused = true;
+	b32 Paused = false;
 	u32 FrameTime = 33;
-	u32 ImageIndex = 165;
+	u32 ImageIndex = 1;
 
 	u32 CellTrackerCount = 0;
-	cell_tracker CellTrackers[CELL_TRACKER_MAX] = {};
+	cell_tracker* CellTrackers = (cell_tracker*)MemoryAllocate(Parameters->MaxTrackedCells * SizeOf(cell_tracker));
+	MemoryZero(CellTrackers, Parameters->MaxTrackedCells * SizeOf(cell_tracker));
 	while (Running)
 	{
 		// image* Image = GetImage(&ImageSet, ImageIndex);
@@ -263,7 +263,7 @@ Dictymaze()
 
 		image Cells = ImageU8(&Difference);
 		DifferenceCellFilter(&Difference, &Cells);
-		ShowImage(OutputWindowName1, &Cells);
+		// ShowImage(OutputWindowName1, &Cells);
 
 		histogram CellsHist = CalculateHistogram(&Cells);
 
@@ -313,6 +313,7 @@ Dictymaze()
 		cv::imwrite(O1Name, Cells);*/
 
 		image OutputCells = ImageU8C3(&Cells);
+		image OutputOriginal = ImageU8C3(&Cells);
 		for (i32 Row = 0; Row < Cells.rows; ++Row)
 		{
 			for (i32 Col = 0; Col < Cells.cols; ++Col)
@@ -321,6 +322,10 @@ Dictymaze()
 				u8 Value = GetAtU8(&Cells, Point);
 				pixel_rgb Pixel = {Value, Value, Value};
 				SetAtU8C3(&OutputCells, Point, Pixel);
+
+				Value = GetAtU8(StabilizedImage, Point);
+				Pixel = {Value, Value, Value};
+				SetAtU8C3(&OutputOriginal, Point, Pixel);
 			}
 		}
 
@@ -354,7 +359,6 @@ Dictymaze()
 					candidate_cell* CandidateCell = CandidateCells + CandidateCellIndex;
 					
 					v2 CenterToPrediction = PredictedPoint - CandidateCell->Center;
-					f32 DistanceSqrToPrediction = Dot(CenterToPrediction, CenterToPrediction);
 
 					// TODO(alex): angle this
 					// TODO(alex): extract constants
@@ -363,16 +367,17 @@ Dictymaze()
 					{
 						DirectionScore = 1.f;
 					}
-					else if (CenterToPrediction.X > -24.f)
+					else if (CenterToPrediction.X > -16.f)
 					{
-						DirectionScore = (24.f - CenterToPrediction.X) / 24.f;
+						DirectionScore = (16.f + CenterToPrediction.X) / 16.f;
 					}
 
-					f32 DistanceScore = (DistanceSqrToPrediction <= 900.f) ? ((900.f - DistanceSqrToPrediction) / 900.f) : 0.f;
+					f32 DistanceSqrToPrediction = Dot(CenterToPrediction, CenterToPrediction);
+					f32 DistanceScore = (DistanceSqrToPrediction < Parameters->MaxEstimateDistanceSq) ? ((Parameters->MaxEstimateDistanceSq - DistanceSqrToPrediction) / Parameters->MaxEstimateDistanceSq) : 0.f;
 					
 					f32 LastSize = CellTrackerLastSize(CellTracker, ImageIndex);
 					f32 SizeScore = 0.f;
-					if (CandidateCell->WeightedSize > 32.f)
+					if (CandidateCell->WeightedSize >= Parameters->MinDetectionSize)
 					{
 						SizeScore = (CandidateCell->WeightedSize < LastSize) ? (LastSize / CandidateCell->WeightedSize) : 1.f;
 					}
@@ -409,39 +414,34 @@ Dictymaze()
 			while ((SelectedCellRankingCount + SelectionDryRuns) < CellTrackerCount)
 			{
 				// NOTE(alex): select the top score
-				b32 SelectedCell = false;
-				cell_ranking* CellRankingMaxScore = CellRankings;
+				cell_ranking* SelectedCellRanking = 0;
 				for (u32 CellRankingIndex = 0; CellRankingIndex < CellRankingCount; ++CellRankingIndex)
 				{
 					cell_ranking* CellRanking = CellRankings + CellRankingIndex;
 
-					if (CellRanking->Score >= CellRankingMaxScore->Score)
+					b32 CellIndexUnused = true;
+					for (u32 SelectedCellRankingIndex = 0; SelectedCellRankingIndex < SelectedCellRankingCount; ++SelectedCellRankingIndex)
 					{
-						b32 CellIndexUnused = true;
-						for (u32 SelectedCellRankingIndex = 0; SelectedCellRankingIndex < SelectedCellRankingCount; ++SelectedCellRankingIndex)
+						if (SelectedCellRankings[SelectedCellRankingIndex]->CellTrackerIndex == CellRanking->CellTrackerIndex ||
+							SelectedCellRankings[SelectedCellRankingIndex]->CandidateCellIndex == CellRanking->CandidateCellIndex)
 						{
-							if (SelectedCellRankings[SelectedCellRankingIndex]->CellTrackerIndex == CellRanking->CellTrackerIndex ||
-								SelectedCellRankings[SelectedCellRankingIndex]->CandidateCellIndex == CellRanking->CandidateCellIndex)
-							{
-								CellIndexUnused = false;
-								break;
-							}
-						}
-
-						if (CellIndexUnused)
-						{
-							SelectedCell = true;
-							CellRankingMaxScore = CellRanking;
+							CellIndexUnused = false;
 							break;
 						}
 					}
+
+					if (CellIndexUnused)
+					{
+						SelectedCellRanking = CellRanking;
+						break;
+					}
 				}
 
-				if (SelectedCell)
+				if (SelectedCellRanking != 0)
 				{
-					SelectedCellRankings[SelectedCellRankingCount++] = CellRankingMaxScore;
-					cell_tracker* CellTracker = CellTrackers + CellRankingMaxScore->CellTrackerIndex;
-					candidate_cell* CandidateCell = (CellRankingMaxScore->Score > 0.f) ? CandidateCells + CellRankingMaxScore->CandidateCellIndex : 0;
+					SelectedCellRankings[SelectedCellRankingCount++] = SelectedCellRanking;
+					cell_tracker* CellTracker = CellTrackers + SelectedCellRanking->CellTrackerIndex;
+					candidate_cell* CandidateCell = (SelectedCellRanking->Score > 0.f) ? CandidateCells + SelectedCellRanking->CandidateCellIndex : 0;
 					CellTrackerCorrect(CellTracker, ImageIndex, CandidateCell);
 				}
 				else
@@ -460,19 +460,19 @@ Dictymaze()
 			}
 
 			// NOTE(alex): start tracking new cells
-			if (CellTrackerCount < CELL_TRACKER_MAX && ThresholdValue <= 80)
+			if (CellTrackerCount < Parameters->MaxTrackedCells && ThresholdValue <= 85)
 			{
-				u32 UsedCandidateCells[CELL_TRACKER_MAX] = {};
+				u32* UsedCandidateCells = (u32*)MemoryAllocate(Parameters->MaxTrackedCells * SizeOf(u32));;
 				u32 UsedCandidateCellCount = 0;
 				b32 OptionsNotExhausted = true;
-				while (CellTrackerCount < CELL_TRACKER_MAX && OptionsNotExhausted)
+				while (CellTrackerCount < Parameters->MaxTrackedCells && OptionsNotExhausted)
 				{
 					u32 CandidateCellIndex;
 					for (CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
 					{
 						candidate_cell* CandidateCell = CandidateCells + CandidateCellIndex;
 
-						if (CandidateCell->WeightedSize >= 200.f)
+						if (CandidateCell->WeightedSize >= Parameters->MinTrackingSize)
 						{
 							b32 CellUntracked = true;
 							for (u32 SelectedCellRankingIndex = 0; SelectedCellRankingIndex < SelectedCellRankingCount; ++SelectedCellRankingIndex)
@@ -512,6 +512,7 @@ Dictymaze()
 						OptionsNotExhausted = false;
 					}
 				}
+				MemoryFree(UsedCandidateCells);
 			}
 			MemoryFree(SelectedCellRankings);
 			MemoryFree(CellRankings);
@@ -525,6 +526,7 @@ Dictymaze()
 				if (CellBounds.TopLeft.X)
 				{
 					cv::rectangle(OutputCells, {CellBounds.TopLeft.X - 1, CellBounds.TopLeft.Y - 1}, {CellBounds.BottomRight.X + 1, CellBounds.BottomRight.Y + 1}, Color);
+					cv::rectangle(OutputOriginal, {CellBounds.TopLeft.X - 1, CellBounds.TopLeft.Y - 1}, {CellBounds.BottomRight.X + 1, CellBounds.BottomRight.Y + 1}, Color);
 				}
 
 				for (u32 StateIndex = 1; StateIndex < CellTracker->StateCount; ++StateIndex)
@@ -543,6 +545,7 @@ Dictymaze()
 					if (PrevEsti.X && CurrEsti.X)
 					{
 						cv::line(OutputCells, {(i32)PrevEsti.X, (i32)PrevEsti.Y}, {(i32)CurrEsti.X, (i32)CurrEsti.Y}, Color);
+						cv::line(OutputOriginal, {(i32)PrevEsti.X, (i32)PrevEsti.Y}, {(i32)CurrEsti.X, (i32)CurrEsti.Y}, Color);
 					}
 
 					/*v2 PrevActu = CellTracker->ActualPositions[StateIndex - 1];
@@ -556,6 +559,7 @@ Dictymaze()
 			}
 
 			ShowImage("Cells", &OutputCells);
+			ShowImage("Original", &OutputOriginal);
 			
 			for (i32 CandidateCellIndex = 0; CandidateCellIndex < CandidateCellCount; ++CandidateCellIndex)
 			{
@@ -576,9 +580,16 @@ Dictymaze()
 			}
 		}
 
-		/*char CellsName[256] = {};
+		char CellsName[256] = {};
 		sprintf(CellsName, "data\\Output\\Cells_%d.png", ImageIndex);
-		cv::imwrite(CellsName, OutputCells);*/
+		cv::imwrite(CellsName, OutputCells);
+		sprintf(CellsName, "data\\Output\\Cells_Original_%d.png", ImageIndex);
+		cv::imwrite(CellsName, OutputOriginal);
+
+		if (NextImageIndex(ImageIndex) == 0)
+		{
+			Paused = true;
+		}
 
 		u32 KeyCode = WaitKey(Paused ? 0 : FrameTime);
 		switch (KeyCode)
@@ -624,4 +635,5 @@ Dictymaze()
 			} break;
 		}
 	}
+	MemoryFree(CellTrackers);
 }

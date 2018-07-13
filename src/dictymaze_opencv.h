@@ -96,5 +96,17 @@ struct cell_ranking
 	f32 Score;
 };
 
+struct dictymaze_parameters
+{
+	char ImageSetName[128];
+	char ImageSetLocation[256];
+	u32 ImageLazyLoading;
+	u32 MaxTrackedCells;
+	f32 MinTrackingSize;
+	f32 MinDetectionSize;
+	f32 CellDirection;
+	f32 MaxEstimateDistanceSq;
+};
+
 #define DICTYMAZE_OPENCV_H
 #endif
